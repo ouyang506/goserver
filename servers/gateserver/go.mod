@@ -1,6 +1,6 @@
 module gateserver
 
-go 1.16
+go 1.15
 
 require goserver v0.0.0
 
