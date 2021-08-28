@@ -28,7 +28,7 @@ import (
 	"strconv"
 	"strings"
 
-	"goserver/common/network/gnet/errors"
+	gneterros "goserver/common/network/gnet/errors"
 
 	"golang.org/x/sys/unix"
 )
@@ -150,7 +150,7 @@ func getUnixSockaddr(proto, addr string) (sa unix.Sockaddr, family int, unixAddr
 	case "unix":
 		sa, family = &unix.SockaddrUnix{Name: unixAddr.Name}, unix.AF_UNIX
 	default:
-		err = errors.ErrUnsupportedUDSProtocol
+		err = gneterros.ErrUnsupportedUDSProtocol
 	}
 
 	return

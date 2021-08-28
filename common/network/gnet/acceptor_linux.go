@@ -25,7 +25,7 @@ package gnet
 import (
 	"os"
 
-	"goserver/common/network/gnet/gnet/errors"
+	"goserver/common/network/gnet/errors"
 	"goserver/common/network/gnet/internal/socket"
 
 	"golang.org/x/sys/unix"
