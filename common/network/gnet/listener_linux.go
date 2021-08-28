@@ -51,7 +51,7 @@ func (ln *listener) Dup() (int, string, error) {
 func (ln *listener) normalize() (err error) {
 	switch ln.network {
 	case "tcp", "tcp4", "tcp6":
-		ln.fd, ln.lnaddr, err = socket.TCPSocket(ln.network, ln.addr, ln.sockopts...)
+		ln.fd, ln.lnaddr, err = socket.TCPSocketListen(ln.network, ln.addr, ln.sockopts...)
 		ln.network = "tcp"
 	case "udp", "udp4", "udp6":
 		ln.fd, ln.lnaddr, err = socket.UDPSocket(ln.network, ln.addr, ln.sockopts...)

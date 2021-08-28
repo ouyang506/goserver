@@ -286,6 +286,27 @@ func Serve(eventHandler EventHandler, protoAddr string, opts ...Option) (err err
 	return serve(eventHandler, ln, options, protoAddr)
 }
 
+func Connect(eventHandler EventHandler, protoAddr string, opts ...Option) (err error) {
+	options := loadOptions(opts...)
+
+	if rbc := options.ReadBufferCap; rbc <= 0 {
+		options.ReadBufferCap = 0x4000
+	} else {
+		options.ReadBufferCap = internal.CeilToPowerOfTwo(rbc)
+	}
+
+	network, addr := parseProtoAddr(protoAddr)
+
+	var c *connector
+	if c, err = initConnector(network, addr, options); err != nil {
+		return
+	}
+	if c != nil {
+
+	}
+	return nil
+}
+
 var (
 	allServers sync.Map
 

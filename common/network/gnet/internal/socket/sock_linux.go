@@ -40,8 +40,8 @@ type Option struct {
 }
 
 // TCPSocket calls the internal tcpSocket.
-func TCPSocket(proto, addr string, sockopts ...Option) (int, net.Addr, error) {
-	return tcpSocket(proto, addr, sockopts...)
+func TCPSocketListen(proto, addr string, sockopts ...Option) (int, net.Addr, error) {
+	return tcpSocketListen(proto, addr, sockopts...)
 }
 
 // UDPSocket calls the internal udpSocket.
@@ -52,6 +52,10 @@ func UDPSocket(proto, addr string, sockopts ...Option) (int, net.Addr, error) {
 // UnixSocket calls the internal udsSocket.
 func UnixSocket(proto, addr string, sockopts ...Option) (int, net.Addr, error) {
 	return udsSocket(proto, addr, sockopts...)
+}
+
+func TCPSocketConnect(proto, addr string, sockopts ...Option) (int, net.Addr, error) {
+	return tcpSocketConnect(proto, addr, sockopts...)
 }
 
 func sysSocket(family, sotype, proto int) (int, error) {

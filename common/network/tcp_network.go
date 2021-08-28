@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func TcpListen(port int32, rcvBuffCap int32, sendBuffCap int32) {
-	addr := fmt.Sprintf(":%d", port)
+func TcpListen(host string, port int32, rcvBuffCap int32, sendBuffCap int32) {
+	addr := fmt.Sprintf("%s:%d", host, port)
 
 	eventHandler := &TcpEventHandler{}
 
@@ -22,8 +22,18 @@ func TcpListen(port int32, rcvBuffCap int32, sendBuffCap int32) {
 	gnet.Serve(eventHandler, addr, options...)
 }
 
-func TcpConnect() {
+func TcpConnect(host string, port int32, rcvBuffCap int32, sendBuffCap int32) {
+	addr := fmt.Sprintf("%s:%d", host, port)
 
+	eventHandler := &TcpEventHandler{}
+	options := []gnet.Option{}
+	options = append(options, gnet.WithTCPNoDelay(gnet.TCPNoDelay))
+	options = append(options, gnet.WithSocketRecvBuffer(int(rcvBuffCap)))
+	options = append(options, gnet.WithSocketSendBuffer(int(sendBuffCap)))
+	options = append(options, gnet.WithTicker(false))
+	options = append(options, gnet.WithCodec(&TcpCodec{}))
+
+	gnet.Connect(eventHandler, addr, options...)
 }
 
 func AddFd(fd int32) {
