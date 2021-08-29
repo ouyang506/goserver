@@ -68,82 +68,6 @@ func (mgr *NetworkMgr) loopEpollWait(epollFd int) error {
 	return nil
 }
 
-func (mgr *NetworkMgr) accept(eventFd int) error {
-	nfd, sa, err := unix.Accept(eventFd)
-	if err != nil {
-		if err == unix.EAGAIN {
-			return nil
-		}
-		return err
-	}
-	if err := unix.SetNonblock(nfd, true); err != nil {
-		return err
-	}
-	switch sa.(type) {
-	case *unix.SockaddrInet4:
-		sa4 := sa.(*unix.SockaddrInet4)
-		mgr.logger.LogInfo("accept connection  fd : %d, remote_addr: %d.%d.%d.%d, remote_port :%v",
-			nfd, int(sa4.Addr[0]), int(sa4.Addr[1]), int(sa4.Addr[2]), int(sa4.Addr[3]), sa4.Port)
-		break
-	default:
-		mgr.logger.LogInfo("accept connection  fd : %d, sa : %+v", nfd, sa)
-	}
-
-	allocEpollFd := mgr.pollFds[nfd%mgr.numLoops]
-	err = mgr.AddRead(allocEpollFd, nfd)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (mgr *NetworkMgr) read(epollFd int, eventFd int) error {
-	mgr.logger.LogDebug("connection trigger read event")
-
-	packet := make([]byte, 1024)
-	n, err := unix.Read(eventFd, packet)
-
-	if err != nil {
-		if err == unix.EAGAIN {
-			mgr.ModReadWrite(epollFd, eventFd)
-			return nil
-		}
-
-		mgr.logger.LogError("connnection read error : %s, force close the socket :%d", err, eventFd)
-		mgr.close(epollFd, eventFd)
-		return fmt.Errorf("connnection read error : %s, fd : %d", err, eventFd)
-	}
-
-	if n < 0 {
-		mgr.logger.LogError("connnection read error length : %d, force close the socket :%d", n, eventFd)
-		mgr.close(epollFd, eventFd)
-		return fmt.Errorf("connnection read error length : %d, fd : %d", n, eventFd)
-	}
-
-	if n > 0 {
-		mgr.logger.LogDebug("rcv buffer :%v", string(packet))
-	}
-	mgr.ModReadWrite(epollFd, eventFd)
-	return nil
-}
-
-func (mgr *NetworkMgr) write(epollFd int, eventFd int) error {
-	mgr.logger.LogDebug("connection trigger write event")
-	return nil
-}
-
-func (mgr *NetworkMgr) close(epollFd int, eventFd int) {
-	err := mgr.ModDetach(epollFd, eventFd)
-	if err != nil {
-		mgr.logger.LogError("network close socket mod detach from epoll error : %s", err)
-	}
-	err = unix.Close(eventFd)
-	if err != nil {
-		mgr.logger.LogError("network close socket error : %s", err)
-	}
-}
-
 func (mgr *NetworkMgr) tcpListen(host string, port int) error {
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
@@ -164,6 +88,12 @@ func (mgr *NetworkMgr) tcpListen(host string, port int) error {
 		} else {
 			copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
 		}
+	}
+
+	err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
+	if err != nil {
+		mgr.logger.LogError("tcpListen set reuse addr error : %v", err)
+		return err
 	}
 
 	err = unix.Bind(fd, sa4)
@@ -197,8 +127,84 @@ func (mgr *NetworkMgr) tcpListen(host string, port int) error {
 	return nil
 }
 
+func (mgr *NetworkMgr) accept(eventFd int) error {
+	nfd, sa, err := unix.Accept(eventFd)
+	if err != nil {
+		if err == unix.EAGAIN {
+			return nil
+		}
+		return err
+	}
+	if err := unix.SetNonblock(nfd, true); err != nil {
+		return err
+	}
+	switch sa.(type) {
+	case *unix.SockaddrInet4:
+		sa4 := sa.(*unix.SockaddrInet4)
+		mgr.logger.LogInfo("accept connection  fd : %d, remote_addr: %d.%d.%d.%d, remote_port :%v",
+			nfd, int(sa4.Addr[0]), int(sa4.Addr[1]), int(sa4.Addr[2]), int(sa4.Addr[3]), sa4.Port)
+		break
+	default:
+		mgr.logger.LogInfo("accept connection  fd : %d, sa : %+v", nfd, sa)
+	}
+
+	allocEpollFd := mgr.pollFds[nfd%mgr.numLoops]
+	err = mgr.AddRead(allocEpollFd, nfd)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (mgr *NetworkMgr) read(epollFd int, eventFd int) error {
+	mgr.logger.LogDebug("connection trigger read event, epollFd:%v, eventFd:%v", epollFd, eventFd)
+
+	packet := make([]byte, 1024)
+	n, err := unix.Read(eventFd, packet)
+
+	if err != nil {
+		if err == unix.EAGAIN {
+			mgr.ModReadWrite(epollFd, eventFd)
+			return nil
+		}
+
+		mgr.logger.LogError("connnection read error : %s, force close the socket :%d", err, eventFd)
+		mgr.close(epollFd, eventFd)
+		return fmt.Errorf("connnection read error : %s, fd : %d", err, eventFd)
+	}
+
+	if n <= 0 {
+		mgr.logger.LogError("connnection read error length : %d, force close the socket :%d", n, eventFd)
+		mgr.close(epollFd, eventFd)
+		return fmt.Errorf("connnection read error length : %d, fd : %d", n, eventFd)
+	}
+
+	mgr.logger.LogDebug("rcv buffer :%v", string(packet))
+
+	mgr.ModRead(epollFd, eventFd)
+	return nil
+}
+
+func (mgr *NetworkMgr) write(epollFd int, eventFd int) error {
+	mgr.logger.LogDebug("connection trigger write event, epollFd:%v, eventFd:%v", epollFd, eventFd)
+	return nil
+}
+
+func (mgr *NetworkMgr) close(epollFd int, eventFd int) {
+	err := mgr.ModDetach(epollFd, eventFd)
+	if err != nil {
+		mgr.logger.LogError("network close socket mod detach from epoll error : %s", err)
+	}
+	err = unix.Close(eventFd)
+	if err != nil {
+		mgr.logger.LogError("network close socket error : %s", err)
+	}
+}
+
 // AddReadWrite ...
-func (p *NetworkMgr) AddReadWrite(epollFd int, fd int) error {
+func (mgr *NetworkMgr) AddReadWrite(epollFd int, fd int) error {
+	mgr.logger.LogDebug("AddReadWrite fd : %v", fd)
 	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN | unix.EPOLLOUT,
@@ -206,7 +212,8 @@ func (p *NetworkMgr) AddReadWrite(epollFd int, fd int) error {
 }
 
 // AddRead ...
-func (p *NetworkMgr) AddRead(epollFd int, fd int) error {
+func (mgr *NetworkMgr) AddRead(epollFd int, fd int) error {
+	mgr.logger.LogDebug("AddRead fd : %v", fd)
 	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN,
@@ -216,24 +223,27 @@ func (p *NetworkMgr) AddRead(epollFd int, fd int) error {
 
 // ModRead ...
 func (mgr *NetworkMgr) ModRead(epollFd int, fd int) error {
+	mgr.logger.LogDebug("ModRead fd : %v", fd)
 	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
-			Events: unix.EPOLLET | unix.EPOLLIN,
+			Events: unix.EPOLLIN,
 		})
 }
 
 // ModReadWrite ...
 func (mgr *NetworkMgr) ModReadWrite(epollFd int, fd int) error {
+	mgr.logger.LogDebug("ModReadWrite fd : %v", fd)
 	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
-			Events: unix.EPOLLET | unix.EPOLLIN | unix.EPOLLOUT,
+			Events: unix.EPOLLIN | unix.EPOLLOUT,
 		})
 }
 
 // ModDetach ...
 func (mgr *NetworkMgr) ModDetach(epollFd int, fd int) error {
+	mgr.logger.LogDebug("ModDetach fd : %v", fd)
 	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_DEL, fd,
 		&unix.EpollEvent{Fd: int32(fd),
-			Events: unix.EPOLLET | unix.EPOLLIN | unix.EPOLLOUT,
+			Events: unix.EPOLLIN | unix.EPOLLOUT,
 		})
 }

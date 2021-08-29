@@ -40,6 +40,6 @@ func (mgr *NetworkMgr) TcpListen(host string, port int) {
 	if err != nil {
 		mgr.logger.LogError("tcp listen at %v:%v error : %s", host, port, err)
 	} else {
-		mgr.logger.LogInfo("start tcp listen at %v:%v", host, port)
+		mgr.logger.LogInfo("start tcp listen at %v:%v, listen fd: %v", host, port, mgr.listenFd)
 	}
 }
