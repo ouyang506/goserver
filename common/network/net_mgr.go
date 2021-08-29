@@ -9,6 +9,7 @@ type NetworkMgr struct {
 	pollFds  []int
 	numLoops int
 	listenFd int
+	connMap  map[int]*Connection // all connections
 }
 
 func NewNetworkMgr(numLoops int, logger log.LoggerInterface) *NetworkMgr {
@@ -41,5 +42,14 @@ func (mgr *NetworkMgr) TcpListen(host string, port int) {
 		mgr.logger.LogError("tcp listen at %v:%v error : %s", host, port, err)
 	} else {
 		mgr.logger.LogInfo("start tcp listen at %v:%v, listen fd: %v", host, port, mgr.listenFd)
+	}
+}
+
+func (mgr *NetworkMgr) TcpConnect(host string, port int) {
+	err := mgr.tcpConnect(host, port)
+	if err != nil {
+		mgr.logger.LogError("tcp connect error, host:%v, port:%v, error : %s", host, port, err)
+	} else {
+		mgr.logger.LogError("tcp connect ok, host:%v, port:%v", host, port)
 	}
 }

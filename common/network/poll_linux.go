@@ -127,6 +127,42 @@ func (mgr *NetworkMgr) tcpListen(host string, port int) error {
 	return nil
 }
 
+func (mgr *NetworkMgr) tcpConnect(host string, port int) error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		mgr.logger.LogError("tcpConnect ResolveTCPAddr error : %v", err)
+		return err
+	}
+
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
+	if err != nil {
+		mgr.logger.LogError("tcpConnect create socket error : %v", err)
+		return err
+	}
+
+	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
+	if tcpAddr.IP != nil {
+		if len(tcpAddr.IP) == 16 {
+			copy(sa4.Addr[:], tcpAddr.IP[12:16]) // copy last 4 bytes of slice to array
+		} else {
+			copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
+		}
+	}
+
+	err = unix.Connect(fd, sa4)
+	if err != nil {
+		if err == unix.EINPROGRESS {
+			mgr.logger.LogDebug("tcpConnect connect peer endpoint in progress, host:%v, port %v", host, port)
+			mgr.AddWrite(mgr.pollFds[fd%mgr.numLoops], fd)
+			return nil
+		}
+		mgr.logger.LogError("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, host, port)
+		return err
+	}
+
+	return nil
+}
+
 func (mgr *NetworkMgr) accept(eventFd int) error {
 	nfd, sa, err := unix.Accept(eventFd)
 	if err != nil {
@@ -218,7 +254,15 @@ func (mgr *NetworkMgr) AddRead(epollFd int, fd int) error {
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN,
 		})
+}
 
+// AddWrite ...
+func (mgr *NetworkMgr) AddWrite(epollFd int, fd int) error {
+	mgr.logger.LogDebug("AddWrite fd : %v", fd)
+	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, fd,
+		&unix.EpollEvent{Fd: int32(fd),
+			Events: unix.EPOLLET | unix.EPOLLOUT,
+		})
 }
 
 // ModRead ...

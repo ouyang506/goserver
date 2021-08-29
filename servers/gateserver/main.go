@@ -18,8 +18,13 @@ func main() {
 	net := network.NewNetworkMgr(numberLoops, logger)
 	net.TcpListen(host, port)
 
-	update()
+	go startClient(net, host, port)
 
+	update()
+}
+
+func startClient(net *network.NetworkMgr, peerHost string, peerPort int) {
+	net.TcpConnect(peerHost, peerPort)
 }
 
 func update() {
