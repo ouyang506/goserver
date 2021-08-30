@@ -8,6 +8,7 @@ import (
 type LoggerInterface interface {
 	LogDebug(string, ...interface{})
 	LogInfo(string, ...interface{})
+	LogWarn(string, ...interface{})
 	LogError(string, ...interface{})
 	LogFatal(string, ...interface{})
 }
@@ -33,6 +34,12 @@ func (logger *Logger) LogDebug(fmtStr string, args ...interface{}) {
 func (logger *Logger) LogInfo(fmtStr string, args ...interface{}) {
 	for _, sink := range logger.sinks {
 		sink.LogInfo(fmtStr, args...)
+	}
+}
+
+func (logger *Logger) LogWarn(fmtStr string, args ...interface{}) {
+	for _, sink := range logger.sinks {
+		sink.LogWarn(fmtStr, args...)
 	}
 }
 
@@ -67,6 +74,11 @@ func (sink *StdLogSink) LogDebug(fmtStr string, args ...interface{}) {
 
 func (sink *StdLogSink) LogInfo(fmtStr string, args ...interface{}) {
 	str := fmt.Sprintf(sink.makePrefix("INFO")+fmtStr, args...)
+	fmt.Println(str)
+}
+
+func (sink *StdLogSink) LogWarn(fmtStr string, args ...interface{}) {
+	str := fmt.Sprintf(sink.makePrefix("WARN")+fmtStr, args...)
 	fmt.Println(str)
 }
 

@@ -149,6 +149,12 @@ func (mgr *NetworkMgr) tcpConnect(host string, port int) error {
 		}
 	}
 
+	conn := NewConnection()
+	conn.SetFd(fd)
+	conn.SetConnected(false)
+	conn.SetPeerAddr(peerHost, peerPort)
+	mgr.AddConnection(fd, conn)
+
 	err = unix.Connect(fd, sa4)
 	if err != nil {
 		if err == unix.EINPROGRESS {
@@ -159,6 +165,9 @@ func (mgr *NetworkMgr) tcpConnect(host string, port int) error {
 		mgr.logger.LogError("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, host, port)
 		return err
 	}
+
+	//connected success directly
+	conn.SetConnected(true)
 
 	return nil
 }
@@ -174,15 +183,26 @@ func (mgr *NetworkMgr) accept(eventFd int) error {
 	if err := unix.SetNonblock(nfd, true); err != nil {
 		return err
 	}
+	peerHost := ""
+	peerPort := 0
 	switch sa.(type) {
 	case *unix.SockaddrInet4:
 		sa4 := sa.(*unix.SockaddrInet4)
-		mgr.logger.LogInfo("accept connection  fd : %d, remote_addr: %d.%d.%d.%d, remote_port :%v",
-			nfd, int(sa4.Addr[0]), int(sa4.Addr[1]), int(sa4.Addr[2]), int(sa4.Addr[3]), sa4.Port)
+		peerHost = fmt.Sprintf("%d.%d.%d.%d", int(sa4.Addr[0]), int(sa4.Addr[1]), int(sa4.Addr[2]), int(sa4.Addr[3]))
+		peerPort = sa4.Port
+		mgr.logger.LogInfo("accept connection  fd : %d, remote_addr: %v, remote_port :%v",
+			nfd, peerHost, peerPort)
 		break
 	default:
 		mgr.logger.LogInfo("accept connection  fd : %d, sa : %+v", nfd, sa)
 	}
+
+	// add connection to pool
+	conn := NewConnection()
+	conn.SetFd(fd)
+	conn.SetConnected(true)
+	conn.SetPeerAddr(peerHost, peerPort)
+	mgr.AddConnection(fd, conn)
 
 	allocEpollFd := mgr.pollFds[nfd%mgr.numLoops]
 	err = mgr.AddRead(allocEpollFd, nfd)
@@ -236,6 +256,8 @@ func (mgr *NetworkMgr) close(epollFd int, eventFd int) {
 	if err != nil {
 		mgr.logger.LogError("network close socket error : %s", err)
 	}
+
+	mgr.RemoveConnection(eventFd)
 }
 
 // AddReadWrite ...

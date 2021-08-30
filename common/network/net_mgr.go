@@ -53,3 +53,29 @@ func (mgr *NetworkMgr) TcpConnect(host string, port int) {
 		mgr.logger.LogError("tcp connect ok, host:%v, port:%v", host, port)
 	}
 }
+
+func (mgr *NetworkMgr) AddConnection(fd int, c*Connection){
+	_, ok := mgr.connMap[fd]
+	if ok{
+		mgr.logger.LogWarn("add a existed fd to connection map, fd : %v", fd)
+	}
+	mgr.connMap[fd] = c
+}
+
+func (mgr *NetworkMgr) RemoveConnection(fd int){
+	_, ok := mgr.connMap[fd]
+	if !ok{
+		mgr.logger.LogWarn("remome connection not found, fd : %v", fd)
+		return
+	}
+	delete(mgr.connMap, fd)
+}
+
+
+func (mgr *NetworkMgr) GetConnection(fd int) *Connection{
+	c, ok := mgr.connMap[fd]
+	if !ok{
+		return nil
+	}
+	return c
+}
