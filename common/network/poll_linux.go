@@ -3,43 +3,246 @@ package network
 import (
 	"fmt"
 	"golang.org/x/sys/unix"
+	"goserver/common/log"
 	"net"
+	"sync/atomic"
 )
 
-func (mgr *NetworkMgr) openPoll() error {
+const(
+	WakeEventTaskTypeTcpListen = 1
+	WakeEventTaskTypeTcpConnect = 2
+)
+
+type NetPollCore struct {
+	logger       log.LoggerInterface
+	numLoops     int
+	listenFd     int32
+	connMap      map[int]*Connection // all established connections
+	connMapMutex sync.Mutex
+	polls        []*Poll
+}
+
+type Poll struct {
+	netcore     *NetPollCore
+	logger      log.LoggerInterface
+	pollFd      int
+	wakeFd 		int
+	wakeEventQueue EventTaskQueue
+}
+
+
+func newNetworkCore(numLoops int, logger log.LoggerInterface) *NetCore {
+	netcore := &NetPollCore{}
+	netcore.numLoops = numLoops
+	netcore.logger = logger
+	netcore.startLoop()
+	return netcore
+}
+
+// implement network core TcpListen
+func (netcore *NetPollCore) TcpListen(host string, port int) {
+	poll := netcore.polls[0]
+
+	task := &EventTask{}
+	task.taskType = WakeEventTaskTypeTcpListen
+	task.taskFunc = func(interface{}) error{
+		err := poll.tcpListen(host, port)
+		if err != nil {
+			poll.logger.LogError("tcp listen at %v:%v error : %s", host, port, err)
+		} else {
+			poll.logger.LogInfo("start tcp listen at %v:%v, listen fd: %v", host, port, mgr.listenFd)
+		}
+		return err
+	}
+
+	poll.Wake(task)
+	return nil
+}
+
+// implement network core TcpConnect
+func (netcore *NetPollCore) TcpConnect(host string, port int) {
+	err := netcore.tcpConnect(host, port)
+	if err != nil {
+		netcore.logger.LogError("tcp connect error, host:%v, port:%v, error : %s", host, port, err)
+	} else {
+		netcore.logger.LogError("tcp connect ok, host:%v, port:%v", host, port)
+	}
+	return err
+}
+
+func (poll *Poll) tcpListen(host string, port int) error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		poll.logger.LogError("tcpListen ResolveTCPAddr error : %v", err)
+		return err
+	}
+
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
+	if err != nil {
+		poll.logger.LogError("tcpListen create socket error : %v", err)
+		return err
+	}
+
+	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
+	if tcpAddr.IP != nil {
+		if len(tcpAddr.IP) == 16 {
+			copy(sa4.Addr[:], tcpAddr.IP[12:16]) // copy last 4 bytes of slice to array
+		} else {
+			copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
+		}
+	}
+
+	err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
+	if err != nil {
+		poll.logger.LogError("tcpListen set reuse addr error : %v", err)
+		return err
+	}
+
+	err = unix.Bind(fd, sa4)
+	if err != nil {
+		poll.logger.LogError("tcpListen bind error : %v", err)
+		return err
+	}
+
+	err = unix.Listen(fd, unix.SOMAXCONN)
+	if err != nil {
+		poll.logger.LogError("tcpListen listen error : %v", err)
+		return err
+	}
+
+	atomic.StoreInt32(&netcore.listenFd, fd)
+
+	// set listen fd nonblock
+	err = unix.SetNonblock(fd, true)
+	if err != nil {
+		netcore.logger.LogError("tcpListen set nonblock error : %v", err)
+		return err
+	}
+
+	// add listen fd to epoll
+	err = netcore.AddRead(netcore.polls[0].pollFd, fd)
+	if err != nil {
+		netcore.logger.LogError("tcpListen add read error : %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func (netcore *NetPollCore) tcpConnect(host string, port int) error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
+	if err != nil {
+		netcore.logger.LogError("tcpConnect ResolveTCPAddr error : %v", err)
+		return err
+	}
+
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
+	if err != nil {
+		netcore.logger.LogError("tcpConnect create socket error : %v", err)
+		return err
+	}
+
+	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
+	if tcpAddr.IP != nil {
+		if len(tcpAddr.IP) == 16 {
+			copy(sa4.Addr[:], tcpAddr.IP[12:16]) // copy last 4 bytes of slice to array
+		} else {
+			copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
+		}
+	}
+
+	conn := NewConnection()
+	conn.SetFd(fd)
+	conn.SetPeerAddr(host, port)
+
+	poll := netcore.polls[fd%netcore.numLoops]
+
+	err = unix.Connect(fd, sa4)
+	if err != nil {
+		if err == unix.EINPROGRESS {
+			netcore.logger.LogDebug("tcpConnect connect peer endpoint in progress, host:%v, port %v", host, port)
+			poll.AddWrite(mgr.pollFds[fd%mgr.numLoops], fd)
+			netcore.AddWaitConnection(fd, conn)
+			return nil
+		}
+		netcore.logger.LogError("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, host, port)
+		return err
+	}
+
+	//connected success directly
+	conn.SetConnected(true)
+	netcore.AddConnection(fd, conn)
+	netcore.AddRead(netcore.pollFds[], fd)
+
+	return nil
+}
+
+func (mgr *NetPollCore) AddConnection(fd int, c *Connection) {
+	mgr.connMapMutex.Lock()
+	defer mgr.connMapMutex.Unlock()
+	_, ok := mgr.connMap[fd]
+	if ok {
+		mgr.logger.LogWarn("add a existed fd to connection map, fd : %v", fd)
+	}
+	mgr.connMap[fd] = c
+}
+
+func (mgr *NetPollCore) RemoveConnection(fd int) {
+	mgr.connMapMutex.Lock()
+	defer mgr.connMapMutex.Unlock()
+	_, ok := mgr.connMap[fd]
+	if !ok {
+		mgr.logger.LogWarn("remome connection not found, fd : %v", fd)
+		return
+	}
+	delete(mgr.connMap, fd)
+}
+
+func (mgr *NetPollCore) GetConnection(fd int) *Connection {
+	mgr.connMapMutex.Lock()
+	defer mgr.connMapMutex.Unlock()
+	c, ok := mgr.connMap[fd]
+	if !ok {
+		return nil
+	}
+	return c
+}
+
+func (netcore *NetPollCore) startLoop() error {
 	for i := 0; i < mgr.numLoops; i++ {
-		epollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+		pollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 		if err != nil {
 			return err
 		}
-		mgr.pollFds = append(mgr.pollFds, epollFd)
+
+		poll := &Poll{}
+		poll.netcore = netcore
+		poll.logger = net.logger
+		poll.pollFd = pollFd
+
+		poll.wakeFd, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+		if err != nil{
+			return err
+		}
+		
+		netcore.polls = append(netcore.polls, poll)
 	}
 
 	// start goroutines for loop
 	for i := 0; i < mgr.numLoops; i++ {
-		go func(epollFd int) {
-			mgr.loopEpollWait(epollFd)
-		}(mgr.pollFds[i])
+		go func(poll *Poll) {
+			poll.loopEpollWait()
+		}(mgr.polls[i])
 	}
 	return nil
 }
 
-func (mgr *NetworkMgr) closePoll() error {
-	for _, fd := range mgr.pollFds {
-		err := unix.Close(fd)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (mgr *NetworkMgr) loopEpollWait(epollFd int) error {
+func (poll *Poll) loopEpollWait() error {
 	events := make([]unix.EpollEvent, 1024)
 	for {
-		n, err := unix.EpollWait(epollFd, events, 100)
+		n, err := unix.EpollWait(poll.pollFd, events, 100)
 		if err != nil && err != unix.EINTR {
-			mgr.logger.LogError("loop epoll wait error : %v", err)
+			poll.logger.LogError("loop epoll wait error : %v", err)
 			return err
 		}
 
@@ -68,111 +271,7 @@ func (mgr *NetworkMgr) loopEpollWait(epollFd int) error {
 	return nil
 }
 
-func (mgr *NetworkMgr) tcpListen(host string, port int) error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
-	if err != nil {
-		mgr.logger.LogError("tcpListen ResolveTCPAddr error : %v", err)
-		return err
-	}
-
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
-	if err != nil {
-		mgr.logger.LogError("tcpListen create socket error : %v", err)
-		return err
-	}
-
-	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
-	if tcpAddr.IP != nil {
-		if len(tcpAddr.IP) == 16 {
-			copy(sa4.Addr[:], tcpAddr.IP[12:16]) // copy last 4 bytes of slice to array
-		} else {
-			copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
-		}
-	}
-
-	err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
-	if err != nil {
-		mgr.logger.LogError("tcpListen set reuse addr error : %v", err)
-		return err
-	}
-
-	err = unix.Bind(fd, sa4)
-	if err != nil {
-		mgr.logger.LogError("tcpListen bind error : %v", err)
-		return err
-	}
-
-	unix.Listen(fd, unix.SOMAXCONN)
-	if err != nil {
-		mgr.logger.LogError("tcpListen listen error : %v", err)
-		return err
-	}
-
-	mgr.listenFd = fd
-
-	// set listen fd nonblock
-	err = unix.SetNonblock(mgr.listenFd, true)
-	if err != nil {
-		mgr.logger.LogError("tcpListen set nonblock error : %v", err)
-		return err
-	}
-
-	// add listen fd to epoll
-	err = mgr.AddRead(mgr.pollFds[0], mgr.listenFd)
-	if err != nil {
-		mgr.logger.LogError("tcpListen add read error : %v", err)
-		return err
-	}
-
-	return nil
-}
-
-func (mgr *NetworkMgr) tcpConnect(host string, port int) error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
-	if err != nil {
-		mgr.logger.LogError("tcpConnect ResolveTCPAddr error : %v", err)
-		return err
-	}
-
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
-	if err != nil {
-		mgr.logger.LogError("tcpConnect create socket error : %v", err)
-		return err
-	}
-
-	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
-	if tcpAddr.IP != nil {
-		if len(tcpAddr.IP) == 16 {
-			copy(sa4.Addr[:], tcpAddr.IP[12:16]) // copy last 4 bytes of slice to array
-		} else {
-			copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
-		}
-	}
-
-	conn := NewConnection()
-	conn.SetFd(fd)
-	conn.SetConnected(false)
-	conn.SetPeerAddr(peerHost, peerPort)
-	mgr.AddConnection(fd, conn)
-
-	err = unix.Connect(fd, sa4)
-	if err != nil {
-		if err == unix.EINPROGRESS {
-			mgr.logger.LogDebug("tcpConnect connect peer endpoint in progress, host:%v, port %v", host, port)
-			mgr.AddWrite(mgr.pollFds[fd%mgr.numLoops], fd)
-			return nil
-		}
-		mgr.logger.LogError("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, host, port)
-		return err
-	}
-
-	//connected success directly
-	conn.SetConnected(true)
-
-	return nil
-}
-
-func (mgr *NetworkMgr) accept(eventFd int) error {
+func (mgr *NetPollCore) accept(eventFd int) error {
 	nfd, sa, err := unix.Accept(eventFd)
 	if err != nil {
 		if err == unix.EAGAIN {
@@ -213,7 +312,7 @@ func (mgr *NetworkMgr) accept(eventFd int) error {
 	return nil
 }
 
-func (mgr *NetworkMgr) read(epollFd int, eventFd int) error {
+func (mgr *NetPollCore) read(epollFd int, eventFd int) error {
 	mgr.logger.LogDebug("connection trigger read event, epollFd:%v, eventFd:%v", epollFd, eventFd)
 
 	packet := make([]byte, 1024)
@@ -242,12 +341,13 @@ func (mgr *NetworkMgr) read(epollFd int, eventFd int) error {
 	return nil
 }
 
-func (mgr *NetworkMgr) write(epollFd int, eventFd int) error {
+func (mgr *NetPollCore) write(epollFd int, eventFd int) error {
 	mgr.logger.LogDebug("connection trigger write event, epollFd:%v, eventFd:%v", epollFd, eventFd)
+
 	return nil
 }
 
-func (mgr *NetworkMgr) close(epollFd int, eventFd int) {
+func (mgr *NetPollCore) close(epollFd int, eventFd int) {
 	err := mgr.ModDetach(epollFd, eventFd)
 	if err != nil {
 		mgr.logger.LogError("network close socket mod detach from epoll error : %s", err)
@@ -260,55 +360,67 @@ func (mgr *NetworkMgr) close(epollFd int, eventFd int) {
 	mgr.RemoveConnection(eventFd)
 }
 
+func (poll *Poll) Wake(t *EventTask) error {
+
+	b  := (*(*[8]byte)(unsafe.Pointer(&u)))[:]
+
+	poll.taskQueue.Enqueue(t)
+
+	for _, err = unix.Write(poll.wakeFd, b); 
+		err == unix.EINTR || err == unix.EAGAIN;
+		_, err = unix.Write(poll.wakeFd, b) {
+	}
+}
+
 // AddReadWrite ...
-func (mgr *NetworkMgr) AddReadWrite(epollFd int, fd int) error {
-	mgr.logger.LogDebug("AddReadWrite fd : %v", fd)
-	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, fd,
+func (poll *Poll) AddReadWrite(fd int) error {
+	poll.logger.LogDebug("AddReadWrite fd : %v", fd)
+	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN | unix.EPOLLOUT,
 		})
 }
 
 // AddRead ...
-func (mgr *NetworkMgr) AddRead(epollFd int, fd int) error {
-	mgr.logger.LogDebug("AddRead fd : %v", fd)
-	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, fd,
+func (poll *Poll) AddRead(fd int) error {
+	poll.logger.LogDebug("AddRead fd : %v", fd)
+	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN,
 		})
 }
 
 // AddWrite ...
-func (mgr *NetworkMgr) AddWrite(epollFd int, fd int) error {
-	mgr.logger.LogDebug("AddWrite fd : %v", fd)
-	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, fd,
+func (poll *Poll) AddWrite(fd int) error {
+	poll.logger.LogDebug("AddWrite fd : %v", fd)
+	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLOUT,
 		})
 }
 
 // ModRead ...
-func (mgr *NetworkMgr) ModRead(epollFd int, fd int) error {
-	mgr.logger.LogDebug("ModRead fd : %v", fd)
-	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_MOD, fd,
+func (poll *Poll) ModRead(fd int) error {
+	poll.logger.LogDebug("ModRead fd : %v", fd)
+	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN,
 		})
 }
 
 // ModReadWrite ...
-func (mgr *NetworkMgr) ModReadWrite(epollFd int, fd int) error {
-	mgr.logger.LogDebug("ModReadWrite fd : %v", fd)
-	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_MOD, fd,
+func (poll *Poll) ModReadWrite(fd int) error {
+	poll.logger.LogDebug("ModReadWrite fd : %v", fd)
+	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN | unix.EPOLLOUT,
 		})
 }
 
 // ModDetach ...
-func (mgr *NetworkMgr) ModDetach(epollFd int, fd int) error {
-	mgr.logger.LogDebug("ModDetach fd : %v", fd)
-	return unix.EpollCtl(epollFd, unix.EPOLL_CTL_DEL, fd,
+func (poll *Poll) ModDetach(fd int) error {
+	poll.logger.LogDebug("ModDetach fd : %v", fd)
+	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_DEL, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN | unix.EPOLLOUT,
 		})
