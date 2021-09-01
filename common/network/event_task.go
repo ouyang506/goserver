@@ -5,9 +5,19 @@ import "sync"
 type EventFunc func(interface{}) error
 
 type EventTask struct {
-	taskType  int
 	eventFunc EventFunc
-	Param     interface{}
+	param     interface{}
+}
+
+func NewEventTask(f EventFunc, param interface{}) *EventTask {
+	return &EventTask{
+		eventFunc: f,
+		param:     param,
+	}
+}
+
+func (t *EventTask) Execute() error {
+	return t.eventFunc(t.param)
 }
 
 type EventTaskQueue struct {

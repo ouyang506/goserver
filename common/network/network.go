@@ -9,6 +9,6 @@ type NetworkCore interface {
 	TcpConnect(host string, port int) error
 }
 
-func NewNetworkCore(numLoops int, logger log.LoggerInterface) *NetworkCore {
+func NewNetworkCore(numLoops int, logger log.LoggerInterface) NetworkCore {
 	return newNetworkCore(numLoops, logger)
 }
