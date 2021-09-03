@@ -10,19 +10,24 @@ import (
 	"unsafe"
 )
 
+// NetPollCore implements the NetworkCore interface
 type NetPollCore struct {
-	logger       log.LoggerInterface
+	logger       log.Logger
 	numLoops     int
+	loadBalance LoadBalance
+	eventHandler NetEventHandler
 	listenFd     int32
 	connMap      map[int]*Connection // all established connections
 	connMapMutex sync.Mutex
 	polls        []*Poll
 }
 
-func newNetworkCore(numLoops int, logger log.LoggerInterface) *NetPollCore {
+func newNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEventHandler, logger log.Logger) *NetPollCore {
 	netcore := &NetPollCore{}
 	netcore.numLoops = numLoops
 	netcore.logger = logger
+	netcore.loadBalance = loadBalance
+	netcore.eventHandler = eventHandler
 	netcore.startLoop()
 	return netcore
 }
@@ -53,7 +58,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 
 // implement network core TcpConnect
 func (netcore *NetPollCore) TcpConnect(host string, port int) error {
-	poll := netcore.polls[1]
+	poll := netcore.loadBalance.AllocConnection
 
 	param := []interface{}{poll, host, port}
 	taskFunc := func(param interface{}) error {
@@ -75,6 +80,14 @@ func (netcore *NetPollCore) TcpConnect(host string, port int) error {
 	return nil
 }
 
+// implement network core TcpSend
+func (netcore *NetPollCore) TcpSend(fd int, []byte) error{
+	
+	return nil
+}
+
+
+// NetPollCore loop
 func (netcore *NetPollCore) startLoop() error {
 	for i := 0; i < netcore.numLoops; i++ {
 		pollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
@@ -86,6 +99,7 @@ func (netcore *NetPollCore) startLoop() error {
 		poll := &Poll{}
 		poll.netcore = netcore
 		poll.logger = netcore.logger
+		poll.eventHandler = netcore.eventHandler
 		poll.pollFd = pollFd
 
 		poll.wakeFd, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
@@ -144,7 +158,8 @@ func (netcore *NetPollCore) GetConnection(fd int) *Connection {
 // one poll => one goroutine
 type Poll struct {
 	netcore        *NetPollCore
-	logger         log.LoggerInterface
+	logger         log.Logger
+	eventHandler   NetEventHandler
 	pollFd         int
 	wakeFd         int
 	wfdBuf         []byte
@@ -252,8 +267,9 @@ func (poll *Poll) tcpConnect(host string, port int) error {
 
 	//connected success directly
 	conn.SetConnected(true)
-	//poll.AddConnection(fd, conn)
 	poll.AddRead(fd)
+
+	poll.eventHandler.OnConnected(conn)
 
 	return nil
 }
@@ -342,6 +358,8 @@ func (poll *Poll) accept(eventFd int) error {
 	if err != nil {
 		return err
 	}
+
+	poll.eventHandler.OnConnected(conn)
 
 	return nil
 }

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type LoggerInterface interface {
+type Logger interface {
 	LogDebug(string, ...interface{})
 	LogInfo(string, ...interface{})
 	LogWarn(string, ...interface{})
@@ -13,45 +13,58 @@ type LoggerInterface interface {
 	LogFatal(string, ...interface{})
 }
 
-type Logger struct {
-	sinks []LoggerInterface
+type LoggerSink interface {
+	Log(string)
 }
 
-func NewLogger() *Logger {
-	return &Logger{}
+type DefaultLogger struct {
+	sinks []LoggerSink
 }
 
-func (logger *Logger) AddSink(sink LoggerInterface) {
+func NewDefaultLogger() *DefaultLogger {
+	return &DefaultLogger{}
+}
+
+func (logger *DefaultLogger) AddSink(sink LoggerSink) {
 	logger.sinks = append(logger.sinks, sink)
 }
 
-func (logger *Logger) LogDebug(fmtStr string, args ...interface{}) {
+func (logger *DefaultLogger) makePrefix(flag string) string {
+	return fmt.Sprintf("[%s][%s]", time.Now().Format("2006-01-02 15:04:05.000"), flag)
+}
+
+func (logger *DefaultLogger) LogDebug(fmtStr string, args ...interface{}) {
+	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
 	for _, sink := range logger.sinks {
-		sink.LogDebug(fmtStr, args...)
+		sink.Log(output)
 	}
 }
 
-func (logger *Logger) LogInfo(fmtStr string, args ...interface{}) {
+func (logger *DefaultLogger) LogInfo(fmtStr string, args ...interface{}) {
+	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
 	for _, sink := range logger.sinks {
-		sink.LogInfo(fmtStr, args...)
+		sink.Log(output)
 	}
 }
 
-func (logger *Logger) LogWarn(fmtStr string, args ...interface{}) {
+func (logger *DefaultLogger) LogWarn(fmtStr string, args ...interface{}) {
+	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
 	for _, sink := range logger.sinks {
-		sink.LogWarn(fmtStr, args...)
+		sink.Log(output)
 	}
 }
 
-func (logger *Logger) LogError(fmtStr string, args ...interface{}) {
+func (logger *DefaultLogger) LogError(fmtStr string, args ...interface{}) {
+	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
 	for _, sink := range logger.sinks {
-		sink.LogError(fmtStr, args...)
+		sink.Log(output)
 	}
 }
 
-func (logger *Logger) LogFatal(fmtStr string, args ...interface{}) {
+func (logger *DefaultLogger) LogFatal(fmtStr string, args ...interface{}) {
+	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
 	for _, sink := range logger.sinks {
-		sink.LogFatal(fmtStr, args...)
+		sink.Log(output)
 	}
 }
 
@@ -63,31 +76,6 @@ func NewStdLogSink() *StdLogSink {
 	return &StdLogSink{}
 }
 
-func (sink *StdLogSink) makePrefix(flag string) string {
-	return fmt.Sprintf("[%s][%s]", time.Now().Format("2006-01-02 15:04:05.000"), flag)
-}
-
-func (sink *StdLogSink) LogDebug(fmtStr string, args ...interface{}) {
-	str := fmt.Sprintf(sink.makePrefix("DEBUG")+fmtStr, args...)
-	fmt.Println(str)
-}
-
-func (sink *StdLogSink) LogInfo(fmtStr string, args ...interface{}) {
-	str := fmt.Sprintf(sink.makePrefix("INFO")+fmtStr, args...)
-	fmt.Println(str)
-}
-
-func (sink *StdLogSink) LogWarn(fmtStr string, args ...interface{}) {
-	str := fmt.Sprintf(sink.makePrefix("WARN")+fmtStr, args...)
-	fmt.Println(str)
-}
-
-func (sink *StdLogSink) LogError(fmtStr string, args ...interface{}) {
-	str := fmt.Sprintf(sink.makePrefix("ERROR")+fmtStr, args...)
-	fmt.Println(str)
-}
-
-func (sink *StdLogSink) LogFatal(fmtStr string, args ...interface{}) {
-	str := fmt.Sprintf(sink.makePrefix("FATAL")+fmtStr, args...)
+func (sink *StdLogSink) Log(str string) {
 	fmt.Println(str)
 }

@@ -10,12 +10,13 @@ func main() {
 	host := "127.0.0.1"
 	port := 9000
 	numberLoops := 4
-	logger := log.NewLogger()
+	logger := log.NewDefaultLogger()
 	logger.AddSink(log.NewStdLogSink())
+	eventHandler := log.NewDefaultNetEventHandler(logger)
 
 	logger.LogInfo("gateserver start !")
 
-	net := network.NewNetworkCore(numberLoops, logger)
+	net := network.NewNetworkCore(numberLoops, eventHandler, logger)
 	net.TcpListen(host, port)
 
 	go startClient(net, host, port)

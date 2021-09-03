@@ -1,6 +1,9 @@
 package network
 
+import "sync/atomic"
+
 type Connection struct {
+	sessionId             int64
 	fd                    int
 	peerHost              string
 	peerPort              int
@@ -10,7 +13,16 @@ type Connection struct {
 
 func NewConnection() *Connection {
 	c := &Connection{}
+	c.sessionId = genNextSessionId()
 	return c
+}
+
+var (
+	nextSessionId = int64(0)
+)
+
+func genNextSessionId() int64 {
+	return atomic.AddInt64(&nextSessionId, 1)
 }
 
 func (c *Connection) SetFd(fd int) {
