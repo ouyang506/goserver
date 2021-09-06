@@ -12,11 +12,12 @@ func main() {
 	numberLoops := 4
 	logger := log.NewDefaultLogger()
 	logger.AddSink(log.NewStdLogSink())
-	eventHandler := log.NewDefaultNetEventHandler(logger)
+	eventHandler := network.NewDefaultNetEventHandler(logger)
+	lb := network.NewLoadBalanceRoundRobin(numberLoops)
 
 	logger.LogInfo("gateserver start !")
 
-	net := network.NewNetworkCore(numberLoops, eventHandler, logger)
+	net := network.NewNetworkCore(numberLoops, lb, eventHandler, logger)
 	net.TcpListen(host, port)
 
 	go startClient(net, host, port)

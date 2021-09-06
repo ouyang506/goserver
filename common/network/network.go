@@ -7,7 +7,7 @@ import (
 type NetworkCore interface {
 	TcpListen(host string, port int) error
 	TcpConnect(host string, port int) error
-	TcpSend(int, []byte) error
+	TcpSend(int64, []byte) error
 }
 
 func NewNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEventHandler, logger log.Logger) NetworkCore {
@@ -16,6 +16,7 @@ func NewNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEvent
 
 /// net connection event handler
 type NetEventHandler interface {
+	OnAccept(*Connection)
 	OnConnected(*Connection)
 	OnDisconnected(*Connection)
 }
@@ -30,10 +31,14 @@ func NewDefaultNetEventHandler(logger log.Logger) NetEventHandler {
 	}
 }
 
+func (h *DefaultNetEventHandler) OnAccept(c *Connection) {
+	h.logger.LogDebug("DefaultNetEventHandler OnAccept, connection info: %+v", c)
+}
+
 func (h *DefaultNetEventHandler) OnConnected(c *Connection) {
-	h.logger.LogDebug("DefaultNetEventHandler OnConnected, detail : %+v", c)
+	h.logger.LogDebug("DefaultNetEventHandler OnConnected, connection info : %+v", c)
 }
 
 func (h *DefaultNetEventHandler) OnDisconnected(c *Connection) {
-	h.logger.LogDebug("DefaultNetEventHandler OnDisconnected, detail : %+v", c)
+	h.logger.LogDebug("DefaultNetEventHandler OnDisconnected, connection info : %+v", c)
 }

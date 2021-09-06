@@ -9,11 +9,15 @@ type Connection struct {
 	peerPort              int
 	lastTryConnectionTime int64 // used as client
 	connected             bool
+	sendBuff              []byte
+	rcvBuff               []byte
 }
 
 func NewConnection() *Connection {
 	c := &Connection{}
 	c.sessionId = genNextSessionId()
+	c.sendBuff = []byte{}
+	c.rcvBuff = []byte{}
 	return c
 }
 

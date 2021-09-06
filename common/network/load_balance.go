@@ -5,8 +5,8 @@ import (
 )
 
 type LoadBalance interface {
-	AllocConnection(int64)
-	GetConnection(int64)
+	AllocConnection(int64) int
+	GetConnection(int64) int
 	RemoveConnection(int64)
 }
 
@@ -17,12 +17,13 @@ type LoadBalanceRoundRobin struct {
 	bucketMutex sync.RWMutex
 }
 
-func NewLoadBalanceRoundRobin(bucketCount int) {
+func NewLoadBalanceRoundRobin(bucketCount int) *LoadBalanceRoundRobin {
 	lb := &LoadBalanceRoundRobin{}
 	lb.bucketCount = bucketCount
 	lb.bucketIndex = 0
 	lb.bucketMap = make(map[int64]int)
 	lb.bucketMutex = sync.RWMutex{}
+	return lb
 }
 
 func (lb *LoadBalanceRoundRobin) AllocConnection(sessionId int64) int {
