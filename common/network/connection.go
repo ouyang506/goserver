@@ -7,6 +7,7 @@ type Connection struct {
 	fd                    int
 	peerHost              string
 	peerPort              int
+	isClient              bool
 	lastTryConnectionTime int64 // used as client
 	connected             bool
 	sendBuff              []byte
@@ -29,6 +30,14 @@ func genNextSessionId() int64 {
 	return atomic.AddInt64(&nextSessionId, 1)
 }
 
+func (c *Connection) SetSessionId(sessionId int64) {
+	c.sessionId = sessionId
+}
+
+func (c *Connection) GetSessionId() int64 {
+	return c.sessionId
+}
+
 func (c *Connection) SetFd(fd int) {
 	c.fd = fd
 }
@@ -44,6 +53,14 @@ func (c *Connection) SetPeerAddr(host string, port int) {
 
 func (c *Connection) GetPeerAddr() (string, int) {
 	return c.peerHost, c.peerPort
+}
+
+func (c *Connection) SetClient(v bool) {
+	c.isClient = true
+}
+
+func (c *Connection) IsClient() bool {
+	return c.isClient
 }
 
 func (c *Connection) SetLastTryConnectTime(t int64) {

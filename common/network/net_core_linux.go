@@ -1,9 +1,9 @@
 package network
 
 import (
+	"errors"
 	"golang.org/x/sys/unix"
 	"goserver/common/log"
-
 	"sync"
 )
 
@@ -39,6 +39,7 @@ func (netcore *NetPollCore) startLoop() error {
 		}
 
 		poll := NewNetPoll()
+		poll.pollIndex = i + 1
 		poll.netcore = netcore
 		poll.logger = netcore.logger
 		poll.eventHandler = netcore.eventHandler
@@ -96,15 +97,20 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 
 // implement network core TcpConnect
 func (netcore *NetPollCore) TcpConnect(host string, port int) error {
-	poll := netcore.polls[1]
 
-	param := []interface{}{poll, host, port}
+	sessionId := genNextSessionId()
+	allocPollIndex := netcore.loadBalance.AllocConnection(sessionId)
+	poll := netcore.polls[allocPollIndex]
+	poll.logger.LogDebug("alloc client connection to poll, sessionId: %v, pollIndex: %v", sessionId, allocPollIndex)
+
+	param := []interface{}{poll, host, port, sessionId}
 	taskFunc := func(param interface{}) error {
 		poll := param.([]interface{})[0].(*Poll)
 		host := param.([]interface{})[1].(string)
 		port := param.([]interface{})[2].(int)
+		sessionId := param.([]interface{})[3].(int64)
 
-		err := poll.tcpConnect(host, port)
+		err := poll.tcpConnect(host, port, sessionId)
 		if err != nil {
 			poll.logger.LogError("tcp connect error, host:%v, port:%v, error : %s", host, port, err)
 		} else {
@@ -121,6 +127,10 @@ func (netcore *NetPollCore) TcpConnect(host string, port int) error {
 // implement network core TcpSend
 func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 	pollIndex := netcore.loadBalance.GetConnection(sessionId)
+	if pollIndex < 0 {
+		netcore.logger.LogError("TcpSend connection poll not found, sessionId:%v", sessionId)
+		return errors.New("connection poll not found")
+	}
 	poll := netcore.polls[pollIndex]
 	param := []interface{}{poll, sessionId, buff}
 	taskFunc := func(param interface{}) error {

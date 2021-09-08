@@ -12,6 +12,7 @@ import (
 
 // net poll, one poll => one goroutine
 type Poll struct {
+	pollIndex        int
 	netcore          *NetPollCore
 	logger           log.Logger
 	eventHandler     NetEventHandler
@@ -89,7 +90,7 @@ func (poll *Poll) tcpListen(host string, port int) (int, error) {
 	return fd, nil
 }
 
-func (poll *Poll) tcpConnect(host string, port int) error {
+func (poll *Poll) tcpConnect(host string, port int, sessionId int64) error {
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		poll.logger.LogError("tcpConnect ResolveTCPAddr error : %v", err)
@@ -112,14 +113,16 @@ func (poll *Poll) tcpConnect(host string, port int) error {
 	}
 
 	conn := NewConnection()
+	conn.sessionId = sessionId
 	conn.SetFd(fd)
 	conn.SetPeerAddr(host, port)
+	conn.SetClient(true)
 
 	err = unix.Connect(fd, sa4)
 	if err != nil {
 		if err == unix.EINPROGRESS {
-			poll.logger.LogDebug("tcpConnect connect peer endpoint in progress, host:%v, port %v", host, port)
-			poll.addWrite(fd)
+			poll.logger.LogInfo("tcpConnect connect peer endpoint in progress, host:%v, port %v", host, port)
+			poll.addReadWrite(fd)
 			poll.addWaitingConnection(conn)
 			return nil
 		}
@@ -142,24 +145,30 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 	if c == nil {
 		return errors.New("connection session not found")
 	}
+	if !c.IsConnected() {
+		return errors.New("connection closed")
+	}
 
 	c.sendBuff = append(c.sendBuff, buff...)
 	n, err := unix.Write(c.fd, c.sendBuff)
+	poll.logger.LogDebug("call unix write, fd: %v, sendBuff:%v", c.fd, string(c.sendBuff))
 	if err != nil {
 		if err == unix.EAGAIN {
+			poll.logger.LogDebug("TcpSend write return EAGAIN, fd:%d", c.fd)
 			if n < len(c.sendBuff) {
 				c.sendBuff = c.sendBuff[n:]
-				poll.modWrite(c.fd)
+				poll.modReadWrite(c.fd)
 			} else {
-				c.sendBuff = nil
+				c.sendBuff = c.sendBuff[:0]
 			}
 		} else {
 			poll.logger.LogError("poll tcp send error : %v", err)
 			poll.close(c.fd)
 			return err
 		}
+	} else {
+		c.sendBuff = c.sendBuff[:0]
 	}
-	c.sendBuff = c.sendBuff[:0]
 	return nil
 }
 
@@ -172,14 +181,14 @@ func (poll *Poll) wake(t *EventTask) error {
 	for {
 		_, err := unix.Write(poll.wakeFd, b)
 		if err != nil {
-			poll.logger.LogDebug("poll wake error : %v, %v, %v", err, unix.EINTR, unix.EAGAIN)
+			poll.logger.LogWarn("poll wake error : %v, %v, %v", err, unix.EINTR, unix.EAGAIN)
 			if err == unix.EINTR || err == unix.EAGAIN {
 				continue
 			} else {
 				return err
 			}
 		} else {
-			poll.logger.LogDebug("send wake event to wakeFd:%v", poll.wakeFd)
+			//poll.logger.LogDebug("send wake event to wakeFd:%v", poll.wakeFd)
 			break
 		}
 	}
@@ -199,8 +208,8 @@ func (poll *Poll) loopEpollWait() error {
 			eventFd := int(events[i].Fd)
 			pollEvent := events[i].Events
 
-			poll.logger.LogDebug("loopEpollWait trigger eventfd : %d, wakeFd :%d, events :%v",
-				eventFd, poll.wakeFd, pollEvent)
+			poll.logger.LogDebug("loopEpollWait trigger event, poll: %v, eventfd : %d, events :%v",
+				poll.pollIndex, eventFd, pollEvent)
 
 			if eventFd == poll.wakeFd {
 				_, _ = unix.Read(eventFd, poll.wfdBuf)
@@ -244,6 +253,7 @@ func (poll *Poll) loopAccept(fd int) error {
 	nfd, sa, err := unix.Accept(fd)
 	if err != nil {
 		if err == unix.EAGAIN {
+			poll.logger.LogDebug("loopAccept accept return EAGAIN, fd:%d", fd)
 			return nil
 		}
 		return err
@@ -270,44 +280,71 @@ func (poll *Poll) loopAccept(fd int) error {
 	conn.SetFd(nfd)
 	conn.SetConnected(true)
 	conn.SetPeerAddr(peerHost, peerPort)
-	poll.addConnection(conn)
 
-	err = poll.addRead(nfd)
-	if err != nil {
+	allocPollIndex := poll.netcore.loadBalance.AllocConnection(conn.sessionId)
+	allocPoll := poll.netcore.polls[allocPollIndex]
+	poll.logger.LogDebug("alloc accepted connection to poll, sessionId:%v, pollIndex:%v", conn.sessionId, allocPollIndex)
+
+	param := []interface{}{allocPoll, conn}
+	taskFunc := func(param interface{}) error {
+		allocPoll := param.([]interface{})[0].(*Poll)
+		conn := param.([]interface{})[1].(*Connection)
+
+		allocPoll.addConnection(conn)
+		err = allocPoll.addRead(conn.fd)
+		if err != nil {
+			return err
+		}
+
+		allocPoll.eventHandler.OnAccept(conn)
 		return err
 	}
-
-	poll.eventHandler.OnAccept(conn)
+	task := NewEventTask(taskFunc, param)
+	allocPoll.wake(task)
 
 	return nil
 }
 
 func (poll *Poll) loopRead(fd int) error {
 	poll.logger.LogDebug("connection trigger read event, pollFd:%v, fd:%v", poll.pollFd, fd)
+	c := poll.getConnectionByFd(fd)
+	if c == nil {
+		poll.logger.LogError("loop read connection not found, fd: %v", fd)
+		return errors.New("loop read connection not found")
+	}
 
-	packet := make([]byte, 1024)
-	n, err := unix.Read(fd, packet)
+	for {
+		packet := make([]byte, 1024)
+		n, err := unix.Read(fd, packet)
 
-	if err != nil {
-		if err == unix.EAGAIN {
-			poll.modReadWrite(fd)
-			return nil
+		if err != nil {
+			if err == unix.EAGAIN {
+				poll.logger.LogDebug("loopRead read return EAGAIN, fd:%d", fd)
+				poll.modReadWrite(fd)
+				break
+			}
+
+			poll.logger.LogError("connnection read error : %s, force close the socket :%d", err, fd)
+			poll.close(fd)
+			return fmt.Errorf("connnection read error : %s, fd : %d", err, fd)
 		}
 
-		poll.logger.LogError("connnection read error : %s, force close the socket :%d", err, fd)
-		poll.close(fd)
-		return fmt.Errorf("connnection read error : %s, fd : %d", err, fd)
+		if n <= 0 {
+			poll.logger.LogError("connnection read error length : %d, force close the socket :%d", n, fd)
+			poll.close(fd)
+			return fmt.Errorf("connnection read error length : %d, fd : %d", n, fd)
+		}
+
+		poll.logger.LogDebug("rcv buffer :%v", string(packet[0:n]))
+		if n < len(packet) {
+			break
+		}
 	}
-
-	if n <= 0 {
-		poll.logger.LogError("connnection read error length : %d, force close the socket :%d", n, fd)
-		poll.close(fd)
-		return fmt.Errorf("connnection read error length : %d, fd : %d", n, fd)
+	if len(c.sendBuff) <= 0 {
+		poll.modRead(fd)
+	} else {
+		poll.modReadWrite(fd)
 	}
-
-	poll.logger.LogDebug("rcv buffer :%v", string(packet))
-
-	poll.modRead(fd)
 	return nil
 }
 
@@ -322,8 +359,13 @@ func (poll *Poll) loopWrite(fd int) error {
 		waitingConn.SetConnected(true)
 		poll.removeWaitingConnection(fd)
 		poll.addConnection(waitingConn)
-		poll.eventHandler.OnAccept(waitingConn)
-		poll.addRead(fd)
+		poll.eventHandler.OnConnected(waitingConn)
+		if len(waitingConn.sendBuff) > 0 {
+			poll.modReadWrite(fd)
+		} else {
+			poll.modRead(fd)
+		}
+
 		return nil
 	}
 
@@ -335,9 +377,10 @@ func (poll *Poll) loopWrite(fd int) error {
 	n, err := unix.Write(c.fd, c.sendBuff)
 	if err != nil {
 		if err == unix.EAGAIN {
+			poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
 			if n < len(c.sendBuff) {
 				c.sendBuff = c.sendBuff[n:]
-				poll.modWrite(c.fd)
+				poll.modReadWrite(c.fd)
 			} else {
 				c.sendBuff = nil
 			}
@@ -463,7 +506,7 @@ func (poll *Poll) addReadWrite(fd int) error {
 		})
 }
 
-// addRead ...
+// addRead ...(listenFd只需要读取数据使用)
 func (poll *Poll) addRead(fd int) error {
 	poll.logger.LogDebug("addRead fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
@@ -472,14 +515,14 @@ func (poll *Poll) addRead(fd int) error {
 		})
 }
 
-// addWrite ...
-func (poll *Poll) addWrite(fd int) error {
-	poll.logger.LogDebug("addWrite fd : %v", fd)
-	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
-		&unix.EpollEvent{Fd: int32(fd),
-			Events: unix.EPOLLET | unix.EPOLLOUT,
-		})
-}
+// // addWrite ...(用不到,fd任何时候都需要读取数据)
+// func (poll *Poll) addWrite(fd int) error {
+// 	poll.logger.LogDebug("addWrite fd : %v", fd)
+// 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
+// 		&unix.EpollEvent{Fd: int32(fd),
+// 			Events: unix.EPOLLET | unix.EPOLLOUT,
+// 		})
+// }
 
 // modReadWrite ...
 func (poll *Poll) modReadWrite(fd int) error {
@@ -499,14 +542,14 @@ func (poll *Poll) modRead(fd int) error {
 		})
 }
 
-// modWrite ...
-func (poll *Poll) modWrite(fd int) error {
-	poll.logger.LogDebug("modWrite fd : %v", fd)
-	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
-		&unix.EpollEvent{Fd: int32(fd),
-			Events: unix.EPOLLOUT,
-		})
-}
+// // modWrite ...(用不到,fd任何时候都需要读取数据)
+// func (poll *Poll) modWrite(fd int) error {
+// 	poll.logger.LogDebug("modWrite fd : %v", fd)
+// 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
+// 		&unix.EpollEvent{Fd: int32(fd),
+// 			Events: unix.EPOLLOUT,
+// 		})
+// }
 
 // modDetach ...
 func (poll *Poll) modDetach(fd int) error {
