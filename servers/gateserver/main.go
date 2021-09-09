@@ -1,8 +1,8 @@
 package main
 
 import (
-	"goserver/common/log"
-	"goserver/common/network"
+	"common/log"
+	"common/network"
 	"sync"
 	"time"
 )

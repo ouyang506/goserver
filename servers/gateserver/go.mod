@@ -2,8 +2,8 @@ module gateserver
 
 go 1.17
 
-require goserver v0.0.0
+require common v0.0.0
 
-require golang.org/x/sys v0.0.0-20210616094352-59db8d763f22 // indirect
+require golang.org/x/sys v0.0.0-20210908233432-aa78b53d3365 // indirect
 
-replace goserver => ../../
+replace common => ../../common/

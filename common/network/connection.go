@@ -12,6 +12,7 @@ type Connection struct {
 	connected             bool
 	sendBuff              []byte
 	rcvBuff               []byte
+	attrMap               map[int]interface{}
 }
 
 func NewConnection() *Connection {
@@ -19,6 +20,7 @@ func NewConnection() *Connection {
 	c.sessionId = genNextSessionId()
 	c.sendBuff = []byte{}
 	c.rcvBuff = []byte{}
+	c.attrMap = make(map[int]interface{})
 	return c
 }
 
@@ -77,4 +79,16 @@ func (c *Connection) SetConnected(flag bool) {
 
 func (c *Connection) IsConnected() bool {
 	return c.connected
+}
+
+func (c *Connection) SetAttrib(k int, v interface{}) {
+	c.attrMap[k] = v
+}
+
+func (c *Connection) GetAttrib(k int) interface{} {
+	v, ok := c.attrMap[k]
+	if !ok {
+		return nil
+	}
+	return v
 }

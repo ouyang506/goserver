@@ -1,7 +1,7 @@
 package network
 
 import (
-	"goserver/common/log"
+	"common/log"
 )
 
 type NetworkCore interface {

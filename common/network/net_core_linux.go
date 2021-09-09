@@ -1,9 +1,9 @@
 package network
 
 import (
+	"common/log"
 	"errors"
 	"golang.org/x/sys/unix"
-	"goserver/common/log"
 	"sync"
 )
 

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"golang.org/x/sys/unix"
-	"goserver/common/log"
+	"common/log"
 	"net"
 	"sync/atomic"
 	"unsafe"
