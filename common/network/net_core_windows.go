@@ -10,37 +10,147 @@ import (
 )
 
 var (
-	E_CONN_ATTRIB_TCP_CONN = 1
+	E_CONN_ATTRIB_TCP_CONN      = 1
+	E_CONN_ATTRIB_TCP_SEND_CHAN = 2
+
+	RECONNECT_DELTA_TIME_SEC = 2
 )
 
 // NetPollCore implements the NetworkCore interface
 type NetPollCore struct {
-	logger       log.Logger
-	numLoops     int
-	loadBalance  LoadBalance
-	eventHandler NetEventHandler
-	listener     net.TCPListener
-	connMap      map[int64]*Connection // sessionId->connection
-	connMapMutex sync.Mutex
+	logger        log.Logger
+	eventHandler  NetEventHandler
+	listener      net.TCPListener
+	connMap       sync.Map // sessionId->connection
+	waitConnMap   sync.Map // sessionId->connection
+	waitConnTimer time.Ticker
 }
 
 func newNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEventHandler, logger log.Logger) *NetPollCore {
 	netcore := &NetPollCore{}
 	netcore.logger = logger
-	netcore.numLoops = numLoops
-	netcore.loadBalance = loadBalance
 	netcore.eventHandler = eventHandler
-	netcore.startLoop()
+	netcore.connMap = sync.Map{}
+	netcore.waitConnMap = sync.Map{}
+	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)
+	netcore.startWaitConnTimer()
 	return netcore
 }
 
-func (netcore *NetPollCore) startLoop() error {
+func (netcore *NetPollCore) startWaitConnTimer() {
+	go func() {
+		for t := range netcore.waitConnTimer.C {
+			netcore.onWaitConnTimer(t)
+		}
+	}()
+}
 
-	for i := 0; i < netcore.numLoops; i++ {
+func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
+	netcore.waitConnMap.Range(func(key, value interface{}) bool {
+		conn := value.(*Connection)
+		if t.Unix()-conn.GetLastTryConnectTime() < int64(RECONNECT_DELTA_TIME_SEC) {
+			return true
+		}
 
+		endpoint := fmt.Sprintf("%s:%d", conn.peerHost, conn.peerPort)
+		dialer := net.Dialer{Timeout: time.Duration(200) * time.Millisecond}
+		netConn, err := dialer.Dial("tcp", endpoint)
+		if err != nil {
+			netcore.logger.LogError("dial tcp error: %v, endpoint: %v", err, endpoint)
+			conn.SetLastTryConnectTime(t.Unix())
+			return true
+		}
+		conn.SetConnected(true)
+		conn.SetLastTryConnectTime(0)
+		conn.SetAttrib(E_CONN_ATTRIB_TCP_CONN, netConn)
+		conn.SetAttrib(E_CONN_ATTRIB_TCP_SEND_CHAN, make(chan []byte, 65535))
+		netcore.waitConnMap.Delete(conn.sessionId)
+		netcore.connMap.Store(conn.sessionId, conn)
+		netcore.eventHandler.OnConnected(conn)
+
+		go netcore.loopRead(conn)
+		go netcore.loopWrite(conn)
+		return true
+	})
+}
+
+func (netcore *NetPollCore) loopAccept() {
+	for {
+		tcpConn, err := netcore.listener.AcceptTCP()
+		if err != nil {
+			netcore.logger.LogError("accept error :%v", err)
+			continue
+		}
+
+		conn := NewConnection()
+		conn.SetConnected(true)
+		conn.SetAttrib(E_CONN_ATTRIB_TCP_CONN, tcpConn)
+		conn.SetAttrib(E_CONN_ATTRIB_TCP_SEND_CHAN, make(chan []byte, 65535))
+		netcore.connMap.Store(conn.sessionId, conn)
+		netcore.eventHandler.OnAccept(conn)
+
+		go netcore.loopRead(conn)
+		go netcore.loopWrite(conn)
 	}
+}
 
-	return nil
+func (netcore *NetPollCore) loopWrite(conn *Connection) {
+
+	for {
+		sendChann := conn.GetAttrib(E_CONN_ATTRIB_TCP_SEND_CHAN).(chan []byte)
+		for {
+			timeout := false
+			t := time.NewTimer(time.Duration(100) * time.Millisecond)
+			select {
+			case buff := <-sendChann:
+				conn.sendBuff = append(conn.sendBuff, buff...)
+			case <-t.C:
+				timeout = true
+			}
+			if timeout {
+				break
+			}
+		}
+
+		if len(conn.sendBuff) <= 0 {
+			continue
+		}
+
+		tcpConn := conn.GetAttrib(E_CONN_ATTRIB_TCP_CONN).(*net.TCPConn)
+		n, err := tcpConn.Write(conn.sendBuff)
+		if err != nil {
+			netcore.logger.LogError("tcp conn write error:%v, sessionId:%v", err, conn.sessionId)
+			netcore.TcpClose(conn.sessionId)
+			return
+		}
+		if n != len(conn.sendBuff) {
+			netcore.logger.LogError("tcp conn write ret len error, writeLen:%v, buffLen:%v, sessionId:%v",
+				n, len(conn.sendBuff), conn.sessionId)
+			netcore.TcpClose(conn.sessionId)
+			return
+		}
+		conn.sendBuff = conn.sendBuff[:0]
+	}
+}
+
+func (netcore *NetPollCore) loopRead(conn *Connection) error {
+
+	c := conn.GetAttrib(E_CONN_ATTRIB_TCP_CONN)
+	if c == nil {
+		return errors.New("get attrib tcp conn nil")
+	}
+	tcpConn := c.(*net.TCPConn)
+	buff := make([]byte, 65535)
+	for {
+		n, err := tcpConn.Read(buff)
+		if err != nil || n <= 0 {
+			netcore.logger.LogError("tcp conn read error:%v, readLen:%v", err, n)
+			netcore.TcpClose(conn.sessionId)
+			return err
+		}
+		netcore.logger.LogDebug("session:%v rcv data : %v", conn.sessionId, string(buff[:n]))
+		conn.rcvBuff = append(conn.rcvBuff, buff...)
+	}
 }
 
 func (netcore *NetPollCore) TcpListen(host string, port int) error {
@@ -61,91 +171,54 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 	}
 	netcore.listener = *listener
 
-	go func() {
-		for {
-			tcpConn, err := netcore.listener.AcceptTCP()
-			if err != nil {
-				netcore.logger.LogError("accept error :%v", err)
-				continue
-			}
+	go netcore.loopAccept()
 
-			conn := NewConnection()
-			conn.SetAttrib(E_CONN_ATTRIB_TCP_CONN, tcpConn)
-			netcore.connMap[conn.sessionId] = conn
-			netcore.eventHandler.OnAccept(conn)
-		}
-
-	}()
 	return nil
 }
 
 func (netcore *NetPollCore) TcpConnect(host string, port int) error {
-
-	endpoint := fmt.Sprintf("%s:%d", host, port)
-	// tcpAddr, err := net.ResolveTCPAddr("tcp4", endpoint)
-	// if err != nil {
-	// 	netcore.logger.LogError("netcore resolve tcp addr error:%v, endpoint:%v", err, endpoint)
-	// 	return nil
-	// }
-
-	dialer := net.Dialer{Timeout: time.Duration(1) * time.Second}
-	netConn, err := dialer.Dial("tcp", endpoint)
-	if err != nil {
-		return err
-	}
-
-	tcpConn, ok := netConn.(*net.TCPConn)
-	if !ok {
-		return errors.New("convert to tcp conn error")
-	}
-
 	conn := NewConnection()
-	conn.SetAttrib(E_CONN_ATTRIB_TCP_CONN, tcpConn)
-	netcore.connMap[conn.sessionId] = conn
-
-	netcore.eventHandler.OnConnected(conn)
-
+	conn.SetClient(true)
+	conn.SetConnected(false)
+	conn.SetLastTryConnectTime(0)
+	conn.SetPeerAddr(host, port)
+	netcore.waitConnMap.Store(conn.sessionId, conn)
 	return nil
 }
 
 func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
+	if len(buff) <= 0 {
+		return nil
+	}
 
-	conn, ok := netcore.connMap[sessionId]
+	c, ok := netcore.connMap.Load(sessionId)
 	if !ok {
 		netcore.logger.LogError("tcp send connection not found, sessionId:%v", sessionId)
 		return errors.New("tcp send connection not found")
 	}
-
-	conn.sendBuff = append(conn.sendBuff, buff...)
-	tcpConn := conn.GetAttrib(E_CONN_ATTRIB_TCP_CONN)
-	if tcpConn == nil {
-		return errors.New("tcp send connection not found")
+	conn := c.(*Connection)
+	sendChan := conn.GetAttrib(E_CONN_ATTRIB_TCP_SEND_CHAN)
+	if sendChan == nil {
+		netcore.logger.LogError("tcp send get connection send chan nil")
+		return errors.New("connection send chan nil")
 	}
-
-	n, err := tcpConn.(*net.TCPConn).Write(conn.sendBuff)
-	if err != nil {
-		netcore.logger.LogError("tcp conn write error:%v, sessionId:%v", err, conn.sessionId)
-		netcore.TcpClose(sessionId)
-		return err
+	select {
+	case sendChan.(chan []byte) <- buff:
+	default:
+		netcore.logger.LogError("tcp send channel full")
+		return errors.New("send channel full")
 	}
-	if n != len(conn.sendBuff) {
-		netcore.logger.LogError("tcp conn write ret len error, writeLen:%v, buffLen:%v, sessionId:%v",
-			n, len(conn.sendBuff), conn.sessionId)
-		netcore.TcpClose(sessionId)
-		return errors.New("tcp conn write return length error")
-	}
-	conn.sendBuff = conn.sendBuff[:0]
 
 	return nil
 }
 
 func (netcore *NetPollCore) TcpClose(sessionId int64) error {
-	conn, ok := netcore.connMap[sessionId]
+	c, ok := netcore.connMap.Load(sessionId)
 	if !ok {
 		netcore.logger.LogError("tcp close connection not found, sessionId:%v", sessionId)
 		return errors.New("tcp close connection not found")
 	}
-
+	conn := c.(*Connection)
 	tcpConn := conn.GetAttrib(E_CONN_ATTRIB_TCP_CONN)
 	if tcpConn == nil {
 		return errors.New("tcp close connection not found")

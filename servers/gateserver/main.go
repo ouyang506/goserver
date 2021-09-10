@@ -24,15 +24,16 @@ func main() {
 	logger.LogInfo("gateserver start !")
 
 	net = network.NewNetworkCore(numberLoops, lb, eventHandler, logger)
-	net.TcpListen(host, port)
 
 	go startClient(net, host, port)
+	time.Sleep(time.Duration(2) * time.Second)
+	net.TcpListen(host, port)
 
 	update()
 }
 
 func startClient(net network.NetworkCore, peerHost string, peerPort int) {
-	time.Sleep(time.Duration(2) * time.Second)
+	//time.Sleep(time.Duration(2) * time.Second)
 	net.TcpConnect(peerHost, peerPort)
 }
 
