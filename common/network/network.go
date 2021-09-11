@@ -18,7 +18,7 @@ func NewNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEvent
 type NetEventHandler interface {
 	OnAccept(*Connection)
 	OnConnected(*Connection)
-	OnDisconnected(*Connection)
+	OnClosed(*Connection)
 }
 
 type DefaultNetEventHandler struct {
@@ -39,6 +39,6 @@ func (h *DefaultNetEventHandler) OnConnected(c *Connection) {
 	h.logger.LogDebug("DefaultNetEventHandler OnConnected, connection info : %+v", c)
 }
 
-func (h *DefaultNetEventHandler) OnDisconnected(c *Connection) {
-	h.logger.LogDebug("DefaultNetEventHandler OnDisconnected, connection info : %+v", c)
+func (h *DefaultNetEventHandler) OnClosed(c *Connection) {
+	h.logger.LogDebug("DefaultNetEventHandler OnClosed, connection info : %+v", c)
 }

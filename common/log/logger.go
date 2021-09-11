@@ -41,28 +41,28 @@ func (logger *DefaultLogger) LogDebug(fmtStr string, args ...interface{}) {
 }
 
 func (logger *DefaultLogger) LogInfo(fmtStr string, args ...interface{}) {
-	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
+	output := fmt.Sprintf(logger.makePrefix("INFO")+fmtStr, args...)
 	for _, sink := range logger.sinks {
 		sink.Log(output)
 	}
 }
 
 func (logger *DefaultLogger) LogWarn(fmtStr string, args ...interface{}) {
-	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
+	output := fmt.Sprintf(logger.makePrefix("WARN")+fmtStr, args...)
 	for _, sink := range logger.sinks {
 		sink.Log(output)
 	}
 }
 
 func (logger *DefaultLogger) LogError(fmtStr string, args ...interface{}) {
-	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
+	output := fmt.Sprintf(logger.makePrefix("ERROR")+fmtStr, args...)
 	for _, sink := range logger.sinks {
 		sink.Log(output)
 	}
 }
 
 func (logger *DefaultLogger) LogFatal(fmtStr string, args ...interface{}) {
-	output := fmt.Sprintf(logger.makePrefix("DEBUG")+fmtStr, args...)
+	output := fmt.Sprintf(logger.makePrefix("FATAL")+fmtStr, args...)
 	for _, sink := range logger.sinks {
 		sink.Log(output)
 	}

@@ -1,28 +1,32 @@
 package network
 
 import (
+	"common/log"
 	"errors"
 	"fmt"
 	"golang.org/x/sys/unix"
-	"common/log"
 	"net"
 	"sync/atomic"
 	"unsafe"
 )
 
+var (
+	wakeInt64 = int64(1)
+	wakeBytes = (*(*[8]byte)(unsafe.Pointer(&wakeInt64)))[:]
+)
+
 // net poll, one poll => one goroutine
 type Poll struct {
-	pollIndex        int
-	netcore          *NetPollCore
-	logger           log.Logger
-	eventHandler     NetEventHandler
-	pollFd           int
-	wakeFd           int
-	wfdBuf           []byte
-	wakeEventQueue   EventTaskQueue
-	connMap          map[int64]*Connection
-	connFdMap        map[int]*Connection
-	waitingConnFdMap map[int]*Connection
+	pollIndex      int
+	netcore        *NetPollCore
+	logger         log.Logger
+	eventHandler   NetEventHandler
+	pollFd         int
+	wakeFd         int
+	wfdBuf         []byte
+	wakeEventQueue EventTaskQueue
+	connMap        map[int64]*Connection
+	connFdMap      map[int]*Connection
 }
 
 func NewNetPoll() *Poll {
@@ -90,8 +94,23 @@ func (poll *Poll) tcpListen(host string, port int) (int, error) {
 	return fd, nil
 }
 
-func (poll *Poll) tcpConnect(host string, port int, sessionId int64) error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
+func (poll *Poll) tcpConnect(conn *Connection) error {
+
+	if conn.IsConnected() {
+		poll.netcore.removeWaitConn(conn.sessionId)
+		if poll.getConnection(conn.sessionId) == nil {
+			poll.addConnection(conn)
+		}
+		return nil
+	}
+
+	if conn.IsConnecting() {
+		if conn.fd > 0 {
+			poll.close(conn.fd)
+		}
+	}
+
+	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", conn.peerHost, conn.peerPort))
 	if err != nil {
 		poll.logger.LogError("tcpConnect ResolveTCPAddr error : %v", err)
 		return err
@@ -106,36 +125,38 @@ func (poll *Poll) tcpConnect(host string, port int, sessionId int64) error {
 	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
 	if tcpAddr.IP != nil {
 		if len(tcpAddr.IP) == 16 {
-			copy(sa4.Addr[:], tcpAddr.IP[12:16]) // copy last 4 bytes of slice to array
+			copy(sa4.Addr[:], tcpAddr.IP[12:16])
 		} else {
-			copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
+			copy(sa4.Addr[:], tcpAddr.IP)
 		}
 	}
 
-	conn := NewConnection()
-	conn.sessionId = sessionId
+	if poll.getConnection(conn.sessionId) != nil {
+		poll.removeConnection(conn.sessionId)
+	}
+
 	conn.SetFd(fd)
-	conn.SetPeerAddr(host, port)
-	conn.SetClient(true)
+	poll.addConnection(conn)
 
 	err = unix.Connect(fd, sa4)
 	if err != nil {
 		if err == unix.EINPROGRESS {
-			poll.logger.LogInfo("tcpConnect connect peer endpoint in progress, host:%v, port %v", host, port)
+			poll.logger.LogInfo("tcpConnect connect peer endpoint in progress, peerHost:%v, peerPort:%v, fd:%v",
+				conn.peerHost, conn.peerPort, conn.fd)
+			conn.SetConnecting()
 			poll.addReadWrite(fd)
-			poll.addWaitingConnection(conn)
-			return nil
+			return err
 		}
-		poll.logger.LogError("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, host, port)
+		poll.logger.LogError("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, conn.peerHost, conn.peerPort)
 		return err
 	}
 
 	//connected success directly
-	conn.SetConnected(true)
+	conn.SetConnected()
 	poll.addConnection(conn)
-	poll.addRead(fd)
-
+	poll.addReadWrite(fd)
 	poll.eventHandler.OnConnected(conn)
+	poll.netcore.removeWaitConn(conn.sessionId)
 
 	return nil
 }
@@ -173,13 +194,11 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 }
 
 func (poll *Poll) wake(t *EventTask) error {
-	u := int64(1)
-	b := (*(*[8]byte)(unsafe.Pointer(&u)))[:]
 
 	poll.wakeEventQueue.Enqueue(t)
 
 	for {
-		_, err := unix.Write(poll.wakeFd, b)
+		_, err := unix.Write(poll.wakeFd, wakeBytes)
 		if err != nil {
 			poll.logger.LogWarn("poll wake error : %v, %v, %v", err, unix.EINTR, unix.EAGAIN)
 			if err == unix.EINTR || err == unix.EAGAIN {
@@ -278,7 +297,7 @@ func (poll *Poll) loopAccept(fd int) error {
 	// add connection to pool
 	conn := NewConnection()
 	conn.SetFd(nfd)
-	conn.SetConnected(true)
+	conn.SetConnected()
 	conn.SetPeerAddr(peerHost, peerPort)
 
 	allocPollIndex := poll.netcore.loadBalance.AllocConnection(conn.sessionId)
@@ -306,7 +325,7 @@ func (poll *Poll) loopAccept(fd int) error {
 }
 
 func (poll *Poll) loopRead(fd int) error {
-	poll.logger.LogDebug("connection trigger read event, pollFd:%v, fd:%v", poll.pollFd, fd)
+	//poll.logger.LogDebug("connection trigger read event, pollFd:%v, fd:%v", poll.pollFd, fd)
 	c := poll.getConnectionByFd(fd)
 	if c == nil {
 		poll.logger.LogError("loop read connection not found, fd: %v", fd)
@@ -349,69 +368,71 @@ func (poll *Poll) loopRead(fd int) error {
 }
 
 func (poll *Poll) loopWrite(fd int) error {
-	poll.logger.LogDebug("connection trigger write event, pollFd:%v, eventFd:%v", poll.pollFd, fd)
+	//poll.logger.LogDebug("connection trigger write event, pollFd:%v, eventFd:%v", poll.pollFd, fd)
+
+	conn := poll.getConnectionByFd(fd)
+	if conn == nil {
+		return errors.New("connection not found")
+	}
 
 	// in process connecting succeed
-	waitingConn := poll.getWaitingConnection(fd)
-	if waitingConn != nil {
+	if conn.IsConnecting() {
 		poll.logger.LogInfo("connect to peer server success, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
-			waitingConn.peerHost, waitingConn.peerPort, waitingConn.sessionId, waitingConn.fd)
-		waitingConn.SetConnected(true)
-		poll.removeWaitingConnection(fd)
-		poll.addConnection(waitingConn)
-		poll.eventHandler.OnConnected(waitingConn)
-		if len(waitingConn.sendBuff) > 0 {
+			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
+
+		conn.SetConnected()
+		poll.eventHandler.OnConnected(conn)
+		if len(conn.sendBuff) > 0 {
 			poll.modReadWrite(fd)
 		} else {
 			poll.modRead(fd)
 		}
+	}
 
+	if len(conn.sendBuff) <= 0 {
 		return nil
 	}
 
-	c := poll.getConnectionByFd(fd)
-	if c == nil {
-		return errors.New("connection not found")
-	}
-
-	n, err := unix.Write(c.fd, c.sendBuff)
+	n, err := unix.Write(conn.fd, conn.sendBuff)
 	if err != nil {
 		if err == unix.EAGAIN {
 			poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
-			if n < len(c.sendBuff) {
-				c.sendBuff = c.sendBuff[n:]
-				poll.modReadWrite(c.fd)
+			if n < len(conn.sendBuff) {
+				conn.sendBuff = conn.sendBuff[n:]
+				poll.modReadWrite(conn.fd)
 			} else {
-				c.sendBuff = nil
+				conn.sendBuff = nil
 			}
 		} else {
 			poll.logger.LogError("poll write error : %v", err)
-			poll.close(c.fd)
+			poll.close(conn.fd)
 			return err
 		}
 	}
-	c.sendBuff = c.sendBuff[:0]
+	conn.sendBuff = conn.sendBuff[:0]
 
 	return nil
 }
 
 func (poll *Poll) loopError(fd int) {
-
-	waitingConn := poll.getWaitingConnection(fd)
-	if waitingConn != nil {
+	conn := poll.getConnectionByFd(fd)
+	if conn != nil && conn.IsConnecting() {
 		poll.logger.LogError("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
-			waitingConn.peerHost, waitingConn.peerPort, waitingConn.sessionId, waitingConn.fd)
+			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
 	}
 
 	poll.close(fd)
-
-	c := poll.getConnectionByFd(fd)
-	if c != nil {
-		poll.eventHandler.OnDisconnected(c)
-	}
 }
 
 func (poll *Poll) close(fd int) {
+	conn := poll.getConnectionByFd(fd)
+	if conn == nil {
+		return
+	}
+
+	isConnected := conn.IsConnected()
+	conn.SetClosed()
+
 	err := poll.modDetach(fd)
 	if err != nil {
 		poll.logger.LogError("network close socket mod detach from epoll error : %s", err)
@@ -422,8 +443,13 @@ func (poll *Poll) close(fd int) {
 	}
 
 	poll.removeConnectionByFd(fd)
-	if poll.getWaitingConnection(fd) != nil {
-		poll.removeWaitingConnection(fd)
+
+	if isConnected {
+		poll.eventHandler.OnClosed(conn)
+	}
+
+	if conn.IsClient() {
+		poll.netcore.addWaitConn(conn)
 	}
 }
 
@@ -472,34 +498,9 @@ func (poll *Poll) getConnectionByFd(fd int) *Connection {
 	return c
 }
 
-func (poll *Poll) addWaitingConnection(c *Connection) {
-	_, ok := poll.waitingConnFdMap[c.fd]
-	if ok {
-		poll.logger.LogWarn("add a existed fd to waiting connection map, fd:%v", c.fd)
-	}
-	poll.waitingConnFdMap[c.fd] = c
-}
-
-func (poll *Poll) removeWaitingConnection(fd int) {
-	_, ok := poll.waitingConnFdMap[fd]
-	if !ok {
-		poll.logger.LogWarn("remome waiting connection not found, fd : %v", fd)
-		return
-	}
-	delete(poll.waitingConnFdMap, fd)
-}
-
-func (poll *Poll) getWaitingConnection(fd int) *Connection {
-	c, ok := poll.waitingConnFdMap[fd]
-	if !ok {
-		return nil
-	}
-	return c
-}
-
 // addReadWrite ...
 func (poll *Poll) addReadWrite(fd int) error {
-	poll.logger.LogDebug("addReadWrite fd : %v", fd)
+	//poll.logger.LogDebug("addReadWrite fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN | unix.EPOLLOUT,
@@ -508,7 +509,7 @@ func (poll *Poll) addReadWrite(fd int) error {
 
 // addRead ...(listenFd只需要读取数据使用)
 func (poll *Poll) addRead(fd int) error {
-	poll.logger.LogDebug("addRead fd : %v", fd)
+	//poll.logger.LogDebug("addRead fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN,
@@ -526,7 +527,7 @@ func (poll *Poll) addRead(fd int) error {
 
 // modReadWrite ...
 func (poll *Poll) modReadWrite(fd int) error {
-	poll.logger.LogDebug("modReadWrite fd : %v", fd)
+	//poll.logger.LogDebug("modReadWrite fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN | unix.EPOLLOUT,
@@ -535,7 +536,7 @@ func (poll *Poll) modReadWrite(fd int) error {
 
 // modRead ...
 func (poll *Poll) modRead(fd int) error {
-	poll.logger.LogDebug("modRead fd : %v", fd)
+	//poll.logger.LogDebug("modRead fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN,
@@ -553,7 +554,7 @@ func (poll *Poll) modRead(fd int) error {
 
 // modDetach ...
 func (poll *Poll) modDetach(fd int) error {
-	poll.logger.LogDebug("modDetach fd : %v", fd)
+	//poll.logger.LogDebug("modDetach fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_DEL, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN | unix.EPOLLOUT,

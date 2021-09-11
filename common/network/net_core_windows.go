@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var (
+const (
 	E_CONN_ATTRIB_TCP_CONN      = 1
 	E_CONN_ATTRIB_TCP_SEND_CHAN = 2
 
@@ -60,7 +60,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 			conn.SetLastTryConnectTime(t.Unix())
 			return true
 		}
-		conn.SetConnected(true)
+		conn.SetConnected()
 		conn.SetLastTryConnectTime(0)
 		conn.SetAttrib(E_CONN_ATTRIB_TCP_CONN, netConn)
 		conn.SetAttrib(E_CONN_ATTRIB_TCP_SEND_CHAN, make(chan []byte, 65535))
@@ -83,7 +83,7 @@ func (netcore *NetPollCore) loopAccept() {
 		}
 
 		conn := NewConnection()
-		conn.SetConnected(true)
+		conn.SetConnected()
 		conn.SetAttrib(E_CONN_ATTRIB_TCP_CONN, tcpConn)
 		conn.SetAttrib(E_CONN_ATTRIB_TCP_SEND_CHAN, make(chan []byte, 65535))
 		netcore.connMap.Store(conn.sessionId, conn)
@@ -179,7 +179,6 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 func (netcore *NetPollCore) TcpConnect(host string, port int) error {
 	conn := NewConnection()
 	conn.SetClient(true)
-	conn.SetConnected(false)
 	conn.SetLastTryConnectTime(0)
 	conn.SetPeerAddr(host, port)
 	netcore.waitConnMap.Store(conn.sessionId, conn)
