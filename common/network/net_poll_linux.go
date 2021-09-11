@@ -172,7 +172,7 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 
 	c.sendBuff = append(c.sendBuff, buff...)
 	n, err := unix.Write(c.fd, c.sendBuff)
-	poll.logger.LogDebug("call unix write, fd: %v, sendBuff:%v", c.fd, string(c.sendBuff))
+	//poll.logger.LogDebug("call unix write, fd: %v, sendBuff:%v", c.fd, string(c.sendBuff))
 	if err != nil {
 		if err == unix.EAGAIN {
 			poll.logger.LogDebug("TcpSend write return EAGAIN, fd:%d", c.fd)
@@ -227,8 +227,8 @@ func (poll *Poll) loopEpollWait() error {
 			eventFd := int(events[i].Fd)
 			pollEvent := events[i].Events
 
-			poll.logger.LogDebug("loopEpollWait trigger event, poll: %v, eventfd : %d, events :%v",
-				poll.pollIndex, eventFd, pollEvent)
+			// poll.logger.LogDebug("loopEpollWait trigger event, poll: %v, eventfd : %d, events :%v",
+			// 	poll.pollIndex, eventFd, pollEvent)
 
 			if eventFd == poll.wakeFd {
 				_, _ = unix.Read(eventFd, poll.wfdBuf)
@@ -302,7 +302,7 @@ func (poll *Poll) loopAccept(fd int) error {
 
 	allocPollIndex := poll.netcore.loadBalance.AllocConnection(conn.sessionId)
 	allocPoll := poll.netcore.polls[allocPollIndex]
-	poll.logger.LogDebug("alloc accepted connection to poll, sessionId:%v, pollIndex:%v", conn.sessionId, allocPollIndex)
+	//poll.logger.LogDebug("alloc accepted connection to poll, sessionId:%v, pollIndex:%v", conn.sessionId, allocPollIndex)
 
 	param := []interface{}{allocPoll, conn}
 	taskFunc := func(param interface{}) error {
@@ -396,7 +396,7 @@ func (poll *Poll) loopWrite(fd int) error {
 	n, err := unix.Write(conn.fd, conn.sendBuff)
 	if err != nil {
 		if err == unix.EAGAIN {
-			poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
+			//poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
 			if n < len(conn.sendBuff) {
 				conn.sendBuff = conn.sendBuff[n:]
 				poll.modReadWrite(conn.fd)
@@ -460,6 +460,8 @@ func (poll *Poll) addConnection(c *Connection) {
 	}
 	poll.connMap[c.sessionId] = c
 	poll.connFdMap[c.fd] = c
+
+	//poll.logger.LogDebug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
 }
 
 func (poll *Poll) removeConnection(sessionId int64) {
@@ -470,6 +472,8 @@ func (poll *Poll) removeConnection(sessionId int64) {
 	}
 	delete(poll.connMap, c.sessionId)
 	delete(poll.connFdMap, c.fd)
+
+	//poll.logger.LogDebug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
 }
 
 func (poll *Poll) removeConnectionByFd(fd int) {
@@ -480,6 +484,8 @@ func (poll *Poll) removeConnectionByFd(fd int) {
 	}
 	delete(poll.connMap, c.sessionId)
 	delete(poll.connFdMap, c.fd)
+
+	//poll.logger.LogDebug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
 }
 
 func (poll *Poll) getConnection(sessionId int64) *Connection {

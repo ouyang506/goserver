@@ -3,6 +3,7 @@ package main
 import (
 	"common/log"
 	"common/network"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -38,15 +39,26 @@ func startClient(net network.NetworkCore, peerHost string, peerPort int) {
 }
 
 func update() {
+	count := 1
+	clienIndex := 0
+	serverIndex := 0
 	for {
 		time.Sleep(time.Duration(1) * time.Second)
 
 		connMap.Range(func(key, value interface{}) bool {
 			c := value.(*network.Connection)
 			if c.IsClient() {
-				net.TcpSend(key.(int64), []byte("hello , this is client ."))
+				clienIndex++
+				net.TcpSend(key.(int64), []byte("hello , this is client "+strconv.Itoa(clienIndex)))
+
 			} else {
-				net.TcpSend(key.(int64), []byte("hello , this is server ."))
+				count++
+				if count%5 == 0 {
+					net.TcpClose(key.(int64))
+				} else {
+					serverIndex++
+					net.TcpSend(key.(int64), []byte("hello , this is server "+strconv.Itoa(serverIndex)))
+				}
 			}
 
 			return true
@@ -65,16 +77,19 @@ func NewCommNetEventHandler(logger log.Logger) network.NetEventHandler {
 }
 
 func (h *CommNetEventHandler) OnAccept(c *network.Connection) {
-	h.logger.LogDebug("CommNetEventHandler OnAccept, connection info: %+v", c)
+	peerHost, peerPort := c.GetPeerAddr()
+	h.logger.LogDebug("NetEventHandler OnAccept, peerHost:%v, peerPort:%v", peerHost, peerPort)
 	connMap.Store(c.GetSessionId(), c)
 }
 
 func (h *CommNetEventHandler) OnConnected(c *network.Connection) {
-	h.logger.LogDebug("CommNetEventHandler OnConnected, connection info : %+v", c)
+	peerHost, peerPort := c.GetPeerAddr()
+	h.logger.LogDebug("NetEventHandler OnConnected, peerHost:%v, peerPort:%v", peerHost, peerPort)
 	connMap.Store(c.GetSessionId(), c)
 }
 
 func (h *CommNetEventHandler) OnClosed(c *network.Connection) {
-	h.logger.LogDebug("CommNetEventHandler OnClosed, connection info : %+v", c)
+	peerHost, peerPort := c.GetPeerAddr()
+	h.logger.LogDebug("NetEventHandler OnClosed, peerHost:%v, peerPort:%v", peerHost, peerPort)
 	connMap.Delete(c.GetSessionId())
 }

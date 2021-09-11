@@ -202,7 +202,6 @@ func (netcore *NetPollCore) TcpConnect(host string, port int) error {
 
 	netcore.addWaitConn(conn)
 	return nil
-
 }
 
 // implement network core TcpSend
@@ -221,6 +220,31 @@ func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 
 		err := poll.TcpSend(sessionId, buff)
 		return err
+	}
+	task := NewEventTask(taskFunc, param)
+	poll.wake(task)
+	return nil
+}
+
+// implement network core TcpClose
+func (netcore *NetPollCore) TcpClose(sessionId int64) error {
+	pollIndex := netcore.loadBalance.GetConnection(sessionId)
+	if pollIndex < 0 {
+		netcore.logger.LogError("TcpClose connection poll not found, sessionId:%v", sessionId)
+		return errors.New("connection poll not found")
+	}
+	poll := netcore.polls[pollIndex]
+	param := []interface{}{poll, sessionId}
+	taskFunc := func(param interface{}) error {
+		poll := param.([]interface{})[0].(*Poll)
+		sessionId := param.([]interface{})[1].(int64)
+
+		conn := poll.getConnection(sessionId)
+		if conn == nil {
+			return errors.New("connnection not found")
+		}
+		poll.close(conn.fd)
+		return nil
 	}
 	task := NewEventTask(taskFunc, param)
 	poll.wake(task)
