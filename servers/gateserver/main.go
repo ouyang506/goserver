@@ -40,8 +40,8 @@ func startClient(net network.NetworkCore, peerHost string, peerPort int) {
 
 func update() {
 	count := 1
-	clienIndex := 0
-	serverIndex := 0
+	clienIndex := 1000
+	serverIndex := 2000
 	for {
 		time.Sleep(time.Duration(1) * time.Second)
 
@@ -50,7 +50,6 @@ func update() {
 			if c.IsClient() {
 				clienIndex++
 				net.TcpSend(key.(int64), []byte("hello , this is client "+strconv.Itoa(clienIndex)))
-
 			} else {
 				count++
 				if count%5 == 0 {
