@@ -1,6 +1,7 @@
 package network
 
 import (
+	"runtime"
 	"sync"
 )
 
@@ -18,6 +19,9 @@ type LoadBalanceRoundRobin struct {
 }
 
 func NewLoadBalanceRoundRobin(bucketCount int) *LoadBalanceRoundRobin {
+	if bucketCount <= 0 {
+		bucketCount = runtime.NumCPU()
+	}
 	lb := &LoadBalanceRoundRobin{}
 	lb.bucketCount = bucketCount
 	lb.bucketIndex = 0

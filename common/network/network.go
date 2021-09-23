@@ -11,8 +11,8 @@ type NetworkCore interface {
 	TcpClose(int64) error
 }
 
-func NewNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEventHandler, logger log.Logger) NetworkCore {
-	return newNetworkCore(numLoops, loadBalance, eventHandler, logger)
+func NewNetworkCore(options ...Option) NetworkCore {
+	return newNetworkCore(options...)
 }
 
 /// net connection event handler

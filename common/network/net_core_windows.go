@@ -39,10 +39,11 @@ type NetPollCore struct {
 	waitConnTimer time.Ticker
 }
 
-func newNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEventHandler, logger log.Logger) *NetPollCore {
+func newNetworkCore(opts ...Option) *NetPollCore {
+	options := loadOptions(opts)
 	netcore := &NetPollCore{}
-	netcore.logger = logger
-	netcore.eventHandler = eventHandler
+	netcore.logger = options.logger
+	netcore.eventHandler = options.eventHandler
 	netcore.connMap = sync.Map{}
 	netcore.waitConnMap = sync.Map{}
 	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)

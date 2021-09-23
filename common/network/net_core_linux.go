@@ -42,16 +42,17 @@ type NetPollCore struct {
 	eventHandler NetEventHandler
 }
 
-func newNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEventHandler, logger log.Logger) *NetPollCore {
-	if numLoops <= 0 {
-		numLoops = runtime.NumCPU()
+func newNetworkCore(opts ...Option) *NetPollCore {
+	options := loadOptions(opts)
+	if options.numLoops <= 0 {
+		options.numLoops = runtime.NumCPU()
 	}
 
 	netcore := &NetPollCore{}
-	netcore.numLoops = numLoops
-	netcore.logger = logger
-	netcore.loadBalance = loadBalance
-	netcore.eventHandler = eventHandler
+	netcore.numLoops = options.numLoops
+	netcore.logger = options.logger
+	netcore.loadBalance = options.loadBalance
+	netcore.eventHandler = options.eventHandler
 	netcore.startLoop()
 
 	netcore.waitConnMap = sync.Map{}
