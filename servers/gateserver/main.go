@@ -46,13 +46,13 @@ func update() {
 		time.Sleep(time.Duration(1) * time.Second)
 
 		connMap.Range(func(key, value interface{}) bool {
-			c := value.(*network.Connection)
+			c := value.(network.Connection)
 			if c.IsClient() {
 				clienIndex++
 				net.TcpSend(key.(int64), []byte("hello , this is client "+strconv.Itoa(clienIndex)))
 			} else {
 				count++
-				if count%5 == 0 {
+				if count%10 == 0 {
 					net.TcpClose(key.(int64))
 				} else {
 					serverIndex++
@@ -75,19 +75,19 @@ func NewCommNetEventHandler(logger log.Logger) network.NetEventHandler {
 	}
 }
 
-func (h *CommNetEventHandler) OnAccept(c *network.Connection) {
+func (h *CommNetEventHandler) OnAccept(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
 	h.logger.LogDebug("NetEventHandler OnAccept, peerHost:%v, peerPort:%v", peerHost, peerPort)
 	connMap.Store(c.GetSessionId(), c)
 }
 
-func (h *CommNetEventHandler) OnConnected(c *network.Connection) {
+func (h *CommNetEventHandler) OnConnected(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
 	h.logger.LogDebug("NetEventHandler OnConnected, peerHost:%v, peerPort:%v", peerHost, peerPort)
 	connMap.Store(c.GetSessionId(), c)
 }
 
-func (h *CommNetEventHandler) OnClosed(c *network.Connection) {
+func (h *CommNetEventHandler) OnClosed(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
 	h.logger.LogDebug("NetEventHandler OnClosed, peerHost:%v, peerPort:%v", peerHost, peerPort)
 	connMap.Delete(c.GetSessionId())

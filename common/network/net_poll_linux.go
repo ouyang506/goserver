@@ -4,10 +4,11 @@ import (
 	"common/log"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"net"
 	"sync/atomic"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -25,8 +26,8 @@ type Poll struct {
 	wakeFd         int
 	wfdBuf         []byte
 	wakeEventQueue EventTaskQueue
-	connMap        map[int64]*Connection
-	connFdMap      map[int]*Connection
+	connMap        map[int64]*NetConn
+	connFdMap      map[int]*NetConn
 }
 
 func NewNetPoll() *Poll {
@@ -94,9 +95,9 @@ func (poll *Poll) tcpListen(host string, port int) (int, error) {
 	return fd, nil
 }
 
-func (poll *Poll) tcpConnect(conn *Connection) error {
+func (poll *Poll) tcpConnect(conn *NetConn) error {
 
-	if conn.IsConnected() {
+	if conn.state == int32(ConnStateConnected) {
 		poll.netcore.removeWaitConn(conn.sessionId)
 		if poll.getConnection(conn.sessionId) == nil {
 			poll.addConnection(conn)
@@ -104,7 +105,7 @@ func (poll *Poll) tcpConnect(conn *Connection) error {
 		return nil
 	}
 
-	if conn.IsConnecting() {
+	if conn.state == int32(ConnStateConnecting) {
 		if conn.fd > 0 {
 			poll.close(conn.fd)
 		}
@@ -135,7 +136,7 @@ func (poll *Poll) tcpConnect(conn *Connection) error {
 		poll.removeConnection(conn.sessionId)
 	}
 
-	conn.SetFd(fd)
+	conn.fd = fd
 	poll.addConnection(conn)
 
 	err = unix.Connect(fd, sa4)
@@ -143,7 +144,7 @@ func (poll *Poll) tcpConnect(conn *Connection) error {
 		if err == unix.EINPROGRESS {
 			poll.logger.LogInfo("tcpConnect connect peer endpoint in progress, peerHost:%v, peerPort:%v, fd:%v",
 				conn.peerHost, conn.peerPort, conn.fd)
-			conn.SetConnecting()
+			conn.state = int32(ConnStateConnecting)
 			poll.addReadWrite(fd)
 			return err
 		}
@@ -152,7 +153,7 @@ func (poll *Poll) tcpConnect(conn *Connection) error {
 	}
 
 	//connected success directly
-	conn.SetConnected()
+	conn.state = int32(ConnStateConnected)
 	poll.addConnection(conn)
 	poll.addReadWrite(fd)
 	poll.eventHandler.OnConnected(conn)
@@ -166,7 +167,7 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 	if c == nil {
 		return errors.New("connection session not found")
 	}
-	if !c.IsConnected() {
+	if c.state != int32(ConnStateConnected) {
 		return errors.New("connection closed")
 	}
 
@@ -295,10 +296,11 @@ func (poll *Poll) loopAccept(fd int) error {
 	}
 
 	// add connection to pool
-	conn := NewConnection()
-	conn.SetFd(nfd)
-	conn.SetConnected()
-	conn.SetPeerAddr(peerHost, peerPort)
+	conn := NewNetConn()
+	conn.fd = nfd
+	conn.state = int32(ConnStateConnected)
+	conn.peerHost = peerHost
+	conn.peerPort = peerPort
 
 	allocPollIndex := poll.netcore.loadBalance.AllocConnection(conn.sessionId)
 	allocPoll := poll.netcore.polls[allocPollIndex]
@@ -307,7 +309,7 @@ func (poll *Poll) loopAccept(fd int) error {
 	param := []interface{}{allocPoll, conn}
 	taskFunc := func(param interface{}) error {
 		allocPoll := param.([]interface{})[0].(*Poll)
-		conn := param.([]interface{})[1].(*Connection)
+		conn := param.([]interface{})[1].(*NetConn)
 
 		allocPoll.addConnection(conn)
 		err = allocPoll.addRead(conn.fd)
@@ -376,11 +378,12 @@ func (poll *Poll) loopWrite(fd int) error {
 	}
 
 	// in process connecting succeed
-	if conn.IsConnecting() {
+	if conn.state == int32(ConnStateConnecting) {
 		poll.logger.LogInfo("connect to peer server success, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
 
-		conn.SetConnected()
+		conn.state = int32(ConnStateConnected)
+		poll.netcore.removeWaitConn(conn.sessionId)
 		poll.eventHandler.OnConnected(conn)
 		if len(conn.sendBuff) > 0 {
 			poll.modReadWrite(fd)
@@ -416,7 +419,7 @@ func (poll *Poll) loopWrite(fd int) error {
 
 func (poll *Poll) loopError(fd int) {
 	conn := poll.getConnectionByFd(fd)
-	if conn != nil && conn.IsConnecting() {
+	if conn != nil && conn.state == int32(ConnStateConnecting) {
 		poll.logger.LogError("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
 	}
@@ -430,8 +433,8 @@ func (poll *Poll) close(fd int) {
 		return
 	}
 
-	isConnected := conn.IsConnected()
-	conn.SetClosed()
+	isConnected := (conn.state == int32(ConnStateConnected))
+	conn.state = int32(ConnStateClosed)
 
 	err := poll.modDetach(fd)
 	if err != nil {
@@ -453,7 +456,7 @@ func (poll *Poll) close(fd int) {
 	}
 }
 
-func (poll *Poll) addConnection(c *Connection) {
+func (poll *Poll) addConnection(c *NetConn) {
 	_, ok := poll.connMap[c.sessionId]
 	if ok {
 		poll.logger.LogWarn("add a existed fd to connection map, session_id:%v, fd:%v", c.sessionId, c.fd)
@@ -488,7 +491,7 @@ func (poll *Poll) removeConnectionByFd(fd int) {
 	//poll.logger.LogDebug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
 }
 
-func (poll *Poll) getConnection(sessionId int64) *Connection {
+func (poll *Poll) getConnection(sessionId int64) *NetConn {
 	c, ok := poll.connMap[sessionId]
 	if !ok {
 		return nil
@@ -496,7 +499,7 @@ func (poll *Poll) getConnection(sessionId int64) *Connection {
 	return c
 }
 
-func (poll *Poll) getConnectionByFd(fd int) *Connection {
+func (poll *Poll) getConnectionByFd(fd int) *NetConn {
 	c, ok := poll.connFdMap[fd]
 	if !ok {
 		return nil

@@ -1,6 +1,9 @@
 package network
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type ConnState int
 
@@ -11,33 +14,9 @@ const (
 	ConnStateClosed
 )
 
-type Connection struct {
-	sessionId int64
-	fd        int
-	host      string
-	port      int
-	peerHost  string
-	peerPort  int
-	state     ConnState
-
-	isClient       bool
-	lastTryConTime int64
-
-	sendBuff []byte
-	rcvBuff  []byte
-
-	attrMap map[int]interface{}
-}
-
-func NewConnection() *Connection {
-	c := &Connection{}
-	c.sessionId = genNextSessionId()
-	c.state = ConnStateInit
-	c.sendBuff = []byte{}
-	c.rcvBuff = []byte{}
-	c.attrMap = make(map[int]interface{})
-	return c
-}
+const (
+	RECONNECT_DELTA_TIME_SEC = 2
+)
 
 var (
 	nextSessionId = int64(10000)
@@ -47,88 +26,55 @@ func genNextSessionId() int64 {
 	return atomic.AddInt64(&nextSessionId, 1)
 }
 
-func (c *Connection) SetSessionId(sessionId int64) {
-	c.sessionId = sessionId
+type Connection interface {
+	GetSessionId() int64
+	GetAddr() (string, int)
+	GetPeerAddr() (string, int)
+	IsClient() bool
+	GetConnState() ConnState
+	SetAttrib(k interface{}, v interface{})
+	GetAttrib(k interface{}) (interface{}, bool)
 }
 
-func (c *Connection) GetSessionId() int64 {
+type BaseConn struct {
+	sessionId int64
+
+	host     string
+	port     int
+	peerHost string
+	peerPort int
+	state    int32
+
+	isClient       bool
+	lastTryConTime int64
+
+	sendBuff []byte
+	rcvBuff  []byte
+
+	attrMap sync.Map
+}
+
+func (c *BaseConn) GetSessionId() int64 {
 	return c.sessionId
 }
-
-func (c *Connection) SetFd(fd int) {
-	c.fd = fd
-}
-
-func (c *Connection) GetFd() int {
-	return c.fd
-}
-
-func (c *Connection) SetAddr(host string, port int) {
-	c.host = host
-	c.port = port
-}
-
-func (c *Connection) GetAddr() (string, int) {
+func (c *BaseConn) GetAddr() (string, int) {
 	return c.host, c.port
 }
-
-func (c *Connection) SetPeerAddr(host string, port int) {
-	c.peerHost = host
-	c.peerPort = port
-}
-
-func (c *Connection) GetPeerAddr() (string, int) {
+func (c *BaseConn) GetPeerAddr() (string, int) {
 	return c.peerHost, c.peerPort
 }
-
-func (c *Connection) SetClient(v bool) {
-	c.isClient = true
-}
-
-func (c *Connection) IsClient() bool {
+func (c *BaseConn) IsClient() bool {
 	return c.isClient
 }
-
-func (c *Connection) SetLastTryConnectTime(t int64) {
-	c.lastTryConTime = t
+func (c *BaseConn) GetConnState() ConnState {
+	return ConnState(atomic.LoadInt32(&c.state))
 }
-
-func (c *Connection) GetLastTryConnectTime() int64 {
-	return c.lastTryConTime
+func (c *BaseConn) SetConnState(v ConnState) {
+	atomic.StoreInt32(&c.state, int32(v))
 }
-
-func (c *Connection) SetConnecting() {
-	c.state = ConnStateConnecting
+func (c *BaseConn) SetAttrib(k interface{}, v interface{}) {
+	c.attrMap.Store(k, v)
 }
-
-func (c *Connection) IsConnecting() bool {
-	return c.state == ConnStateConnecting
-}
-
-func (c *Connection) SetConnected() {
-	c.state = ConnStateConnected
-}
-
-func (c *Connection) IsConnected() bool {
-	return c.state == ConnStateConnected
-}
-
-func (c *Connection) SetClosed() {
-	c.state = ConnStateClosed
-}
-
-func (c *Connection) IsClosed() bool {
-	return c.state == ConnStateClosed
-}
-
-func (c *Connection) SetAttrib(k int, v interface{}) {
-	c.attrMap[k] = v
-}
-
-func (c *Connection) GetAttrib(k int) interface{} {
-	v, ok := c.attrMap[k]
-	if !ok {
-		return nil
-	}
-	return v
+func (c *BaseConn) GetAttrib(k interface{}) (interface{}, bool) {
+	return c.attrMap.Load(k)
 }

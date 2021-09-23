@@ -10,9 +10,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const (
-	RECONNECT_DELTA_TIME_SEC = 2
-)
+type NetConn struct {
+	BaseConn
+	fd int
+}
+
+func NewNetConn() *NetConn {
+	c := &NetConn{}
+	c.sessionId = genNextSessionId()
+	c.state = int32(ConnStateInit)
+	c.attrMap = sync.Map{}
+	c.sendBuff = make([]byte, 0, 65535)
+	c.rcvBuff = make([]byte, 0, 65535)
+
+	return c
+}
 
 // NetPollCore implements the NetworkCore interface
 type NetPollCore struct {
@@ -51,19 +63,6 @@ func newNetworkCore(numLoops int, loadBalance LoadBalance, eventHandler NetEvent
 
 // NetPollCore loop
 func (netcore *NetPollCore) startLoop() error {
-	// acceptPollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
-	// if err != nil {
-	// 	netcore.logger.LogError("EpollCreate1 error : %v", err)
-	// 	return err
-	// }
-	// poll := NewNetPoll()
-	// poll.pollIndex = 0
-	// poll.netcore = netcore
-	// poll.logger = netcore.logger
-	// poll.eventHandler = netcore.eventHandler
-	// poll.pollFd = acceptPollFd
-	// netcore.acceptPoll = poll
-
 	pollFds := []int{}
 	wakeFds := []int{}
 
@@ -88,8 +87,8 @@ func (netcore *NetPollCore) startLoop() error {
 		}
 		poll.wfdBuf = make([]byte, 8)
 		poll.wakeEventQueue = EventTaskQueue{}
-		poll.connMap = map[int64]*Connection{}
-		poll.connFdMap = map[int]*Connection{}
+		poll.connMap = map[int64]*NetConn{}
+		poll.connFdMap = map[int]*NetConn{}
 
 		poll.addRead(poll.wakeFd)
 
@@ -126,11 +125,11 @@ func (netcore *NetPollCore) startWaitConnTimer() {
 
 func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 	netcore.waitConnMap.Range(func(key, value interface{}) bool {
-		conn := value.(*Connection)
-		if t.Unix()-conn.GetLastTryConnectTime() < int64(RECONNECT_DELTA_TIME_SEC) {
+		conn := value.(*NetConn)
+		if t.Unix()-conn.lastTryConTime < int64(RECONNECT_DELTA_TIME_SEC) {
 			return true
 		}
-		conn.SetLastTryConnectTime(t.Unix())
+		conn.lastTryConTime = t.Unix()
 
 		allocIndex := netcore.loadBalance.GetConnection(conn.sessionId)
 		if allocIndex < 0 {
@@ -141,7 +140,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		param := []interface{}{poll, conn}
 		taskFunc := func(param interface{}) error {
 			poll := param.([]interface{})[0].(*Poll)
-			conn := param.([]interface{})[1].(*Connection)
+			conn := param.([]interface{})[1].(*NetConn)
 
 			err := poll.tcpConnect(conn)
 			if err != nil {
@@ -160,7 +159,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 	})
 }
 
-func (netcore *NetPollCore) addWaitConn(conn *Connection) {
+func (netcore *NetPollCore) addWaitConn(conn *NetConn) {
 	netcore.waitConnMap.Store(conn.sessionId, conn)
 }
 
@@ -194,10 +193,10 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 // implement network core TcpConnect
 func (netcore *NetPollCore) TcpConnect(host string, port int) error {
 
-	conn := NewConnection()
-	conn.SetClient(true)
-	conn.SetLastTryConnectTime(0)
-	conn.SetPeerAddr(host, port)
+	conn := NewNetConn()
+	conn.isClient = true
+	conn.peerHost = host
+	conn.peerPort = port
 	netcore.loadBalance.AllocConnection(conn.sessionId)
 
 	netcore.addWaitConn(conn)
