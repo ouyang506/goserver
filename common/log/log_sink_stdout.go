@@ -15,5 +15,5 @@ func (sink *StdoutLogSink) Sink(str string) {
 }
 
 func (sink *StdoutLogSink) Flush() {
-
+	//pass
 }

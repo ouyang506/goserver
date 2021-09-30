@@ -1,12 +1,20 @@
 package log
 
+import (
+	"common/utility/queue"
+	"fmt"
+	"time"
+)
+
 type CommonLogger struct {
 	logLvl LogLevel
 	sinks  []LogSink
+	queue  *queue.LockFreeQueue
 }
 
 func NewCommonLogger() *CommonLogger {
 	cl := &CommonLogger{}
+	cl.queue = queue.NewLockFreeQueue()
 	return cl
 }
 
@@ -15,14 +23,36 @@ func (cl *CommonLogger) SetLogLevel(logLvl LogLevel) {
 }
 
 func (cl *CommonLogger) AddSink(sink LogSink) {
-	cl.sinks = append(logger.sinks, sink)
+	cl.sinks = append(cl.sinks, sink)
+}
+
+func (cl *CommonLogger) Start() {
+	go cl.loopSink()
+}
+
+func (cl *CommonLogger) loopSink() {
+	for {
+		v := cl.queue.Dequeue()
+		if v == nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		content := v.(*LogContent)
+
+		output := fmt.Sprintf("[%s][%s]%s", content.logTime.Format("2006-01-02 15:04:05.000"),
+			LogLevelName[content.logLvl], content.content)
+		for _, sink := range cl.sinks {
+			sink.Sink(output)
+		}
+	}
 }
 
 func (cl *CommonLogger) levelLog(lvl LogLevel, fmtStr string, args ...interface{}) {
-	// output := fmt.Sprintf("[%s][%s]%s", time.Now().Format("2006-01-02 15:04:05.000"), LogLevelName[lvl], fmtStr, args...)
-	// for _, sink := range l.sinks {
-	// 	sink.Sink(output)
-	// }
+	content := &LogContent{}
+	content.logLvl = lvl
+	content.logTime = time.Now()
+	content.content = fmt.Sprintf(fmtStr, args...)
+	cl.queue.Enqueue(content)
 }
 
 func (cl *CommonLogger) LogDebug(fmtStr string, args ...interface{}) {
@@ -58,4 +88,10 @@ func (cl *CommonLogger) LogFatal(fmtStr string, args ...interface{}) {
 		return
 	}
 	cl.levelLog(LogLevelFatal, fmtStr, args...)
+}
+
+func (cl *CommonLogger) Flush() {
+	for _, sink := range cl.sinks {
+		sink.Flush()
+	}
 }

@@ -189,6 +189,7 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 			return err
 		}
 	} else {
+		poll.logger.LogDebug("send buff : %s, bufflen: %d, senLen:%d", string(c.sendBuff), n, n)
 		c.sendBuff = c.sendBuff[:0]
 	}
 	return nil

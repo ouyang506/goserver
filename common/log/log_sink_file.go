@@ -3,7 +3,7 @@ package log
 type FileLogSink struct {
 }
 
-func NewStdLogSink() *FileLogSink {
+func NewFileLogSink() *FileLogSink {
 	return &FileLogSink{}
 }
 

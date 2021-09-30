@@ -17,8 +17,9 @@ func main() {
 	host := "127.0.0.1"
 	port := 9000
 	numberLoops := 0
-	logger := log.NewDefaultLogger()
+	logger := log.NewCommonLogger()
 	logger.AddSink(log.NewStdLogSink())
+	logger.Start()
 	eventHandler := NewCommNetEventHandler(logger)
 	lb := network.NewLoadBalanceRoundRobin(numberLoops)
 
