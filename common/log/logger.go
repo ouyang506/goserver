@@ -31,7 +31,7 @@ type Logger interface {
 }
 
 type LogSink interface {
-	Sink(string)
+	Sink(*LogContent)
 	Flush()
 }
 

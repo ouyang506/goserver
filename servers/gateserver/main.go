@@ -19,6 +19,7 @@ func main() {
 	numberLoops := 0
 	logger := log.NewCommonLogger()
 	logger.AddSink(log.NewStdLogSink())
+	logger.AddSink(log.NewFileLogSink("./log/"))
 	logger.Start()
 	eventHandler := NewCommNetEventHandler(logger)
 	lb := network.NewLoadBalanceRoundRobin(numberLoops)

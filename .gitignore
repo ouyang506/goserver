@@ -2,3 +2,4 @@
 vendor
 servers/gateserver/gateserver.exe
 servers/gateserver/gateserver
+servers/gateserver/log/
