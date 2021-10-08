@@ -48,9 +48,6 @@ type BaseConn struct {
 	isClient       bool
 	lastTryConTime int64
 
-	sendBuff []byte
-	rcvBuff  []byte
-
 	attrMap sync.Map
 }
 

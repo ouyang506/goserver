@@ -14,6 +14,8 @@ import (
 type NetConn struct {
 	BaseConn
 	sendChann     chan []byte
+	sendBuff      []byte
+	rcvBuff       []byte
 	foceClose     int32
 	loopWriteFlag int32
 	loopReadFlag  int32

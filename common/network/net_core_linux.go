@@ -2,6 +2,7 @@ package network
 
 import (
 	"common/log"
+	"common/utility/ringbuffer"
 	"errors"
 	"runtime"
 	"sync"
@@ -12,7 +13,9 @@ import (
 
 type NetConn struct {
 	BaseConn
-	fd int
+	fd       int
+	sendBuff *ringbuffer.RingBuffer
+	rcvBuff  *ringbuffer.RingBuffer
 }
 
 func NewNetConn() *NetConn {
@@ -20,8 +23,8 @@ func NewNetConn() *NetConn {
 	c.sessionId = genNextSessionId()
 	c.state = int32(ConnStateInit)
 	c.attrMap = sync.Map{}
-	c.sendBuff = make([]byte, 0, 65535)
-	c.rcvBuff = make([]byte, 0, 65535)
+	c.sendBuff = ringbuffer.NewRingBuffer(0xFFFFFFFF)
+	c.rcvBuff = ringbuffer.NewRingBuffer(0xFFFFFFFF)
 
 	return c
 }

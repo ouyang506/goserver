@@ -39,7 +39,7 @@ type RingBuffer struct {
 	isEmpty bool
 }
 
-func New(size int) *RingBuffer {
+func NewRingBuffer(size int) *RingBuffer {
 	if size == 0 {
 		return &RingBuffer{isEmpty: true}
 	}

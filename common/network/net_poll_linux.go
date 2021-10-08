@@ -171,26 +171,36 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 		return errors.New("connection closed")
 	}
 
-	c.sendBuff = append(c.sendBuff, buff...)
-	n, err := unix.Write(c.fd, c.sendBuff)
+	b := buff
+	appendFlag := false
+	if !c.sendBuff.IsEmpty() {
+		c.sendBuff.Write(buff)
+		b, _ = c.sendBuff.PeekAll()
+		appendFlag = true
+	}
+	n, err := unix.Write(c.fd, b)
 	//poll.logger.LogDebug("call unix write, fd: %v, sendBuff:%v", c.fd, string(c.sendBuff))
 	if err != nil {
 		if err == unix.EAGAIN {
 			poll.logger.LogDebug("TcpSend write return EAGAIN, fd:%d", c.fd)
-			if n < len(c.sendBuff) {
-				c.sendBuff = c.sendBuff[n:]
-				poll.modReadWrite(c.fd)
+			if appendFlag {
+				c.sendBuff.Discard(n)
 			} else {
-				c.sendBuff = c.sendBuff[:0]
+				c.sendBuff.Write(buff[n:])
 			}
+
+			if !c.sendBuff.IsEmpty() {
+				poll.modReadWrite(c.fd)
+			}
+
 		} else {
 			poll.logger.LogError("poll tcp send error : %v", err)
 			poll.close(c.fd)
 			return err
 		}
 	} else {
-		poll.logger.LogDebug("send buff : %s, bufflen: %d, senLen:%d", string(c.sendBuff), n, n)
-		c.sendBuff = c.sendBuff[:0]
+		poll.logger.LogDebug("send buff : %s, bufflen: %d, senLen:%d", string(b), n, n)
+		c.sendBuff.Reset()
 	}
 	return nil
 }
@@ -362,7 +372,7 @@ func (poll *Poll) loopRead(fd int) error {
 			break
 		}
 	}
-	if len(c.sendBuff) <= 0 {
+	if !c.sendBuff.IsEmpty() {
 		poll.modRead(fd)
 	} else {
 		poll.modReadWrite(fd)
@@ -386,34 +396,34 @@ func (poll *Poll) loopWrite(fd int) error {
 		conn.state = int32(ConnStateConnected)
 		poll.netcore.removeWaitConn(conn.sessionId)
 		poll.eventHandler.OnConnected(conn)
-		if len(conn.sendBuff) > 0 {
+		if !conn.sendBuff.IsEmpty() {
 			poll.modReadWrite(fd)
 		} else {
 			poll.modRead(fd)
 		}
 	}
 
-	if len(conn.sendBuff) <= 0 {
+	if conn.sendBuff.IsEmpty() {
 		return nil
 	}
-
-	n, err := unix.Write(conn.fd, conn.sendBuff)
+	b, _ := conn.sendBuff.PeekAll()
+	n, err := unix.Write(conn.fd, b)
 	if err != nil {
 		if err == unix.EAGAIN {
-			//poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
-			if n < len(conn.sendBuff) {
-				conn.sendBuff = conn.sendBuff[n:]
+			poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
+			conn.sendBuff.Discard(n)
+
+			if !conn.sendBuff.IsEmpty() {
 				poll.modReadWrite(conn.fd)
-			} else {
-				conn.sendBuff = nil
 			}
+
 		} else {
 			poll.logger.LogError("poll write error : %v", err)
 			poll.close(conn.fd)
 			return err
 		}
 	}
-	conn.sendBuff = conn.sendBuff[:0]
+	conn.sendBuff.Reset()
 
 	return nil
 }
