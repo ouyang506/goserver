@@ -38,7 +38,10 @@ func (sink *FileLogSink) getFile(fileName string) (*os.File, error) {
 func (sink *FileLogSink) Sink(content *LogContent) {
 	t := content.logTime
 	fileName := sink.getFileName(t)
-	if sink.curFile == nil || sink.curFileName == fileName {
+	if sink.curFileName == fileName {
+		if sink.curFile != nil {
+			sink.curFile.Close()
+		}
 		sink.curFileName = fileName
 		sink.curFile, _ = sink.getFile(fileName)
 	}
