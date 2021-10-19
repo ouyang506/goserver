@@ -5,10 +5,12 @@ import "common/log"
 type Option func(ops *Options)
 
 type Options struct {
-	numLoops     int
-	loadBalance  LoadBalance
-	eventHandler NetEventHandler
-	logger       log.Logger
+	numLoops             int
+	loadBalance          LoadBalance
+	eventHandler         NetEventHandler
+	socketSendBufferSize int
+	socketRcvBufferSize  int
+	logger               log.Logger
 }
 
 func loadOptions(op []Option) *Options {
@@ -34,6 +36,18 @@ func WithLoadBalance(loadBalance LoadBalance) Option {
 func WithEventHandler(eventHandler NetEventHandler) Option {
 	return func(ops *Options) {
 		ops.eventHandler = eventHandler
+	}
+}
+
+func WithSocketSendBufferSize(sendBufSize int) Option {
+	return func(ops *Options) {
+		ops.socketSendBufferSize = sendBufSize
+	}
+}
+
+func WithSocketRcvBufferSize(rcvBufSize int) Option {
+	return func(ops *Options) {
+		ops.socketRcvBufferSize = rcvBufSize
 	}
 }
 

@@ -18,13 +18,13 @@ type NetConn struct {
 	rcvBuff  *ringbuffer.RingBuffer
 }
 
-func NewNetConn() *NetConn {
+func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {
 	c := &NetConn{}
 	c.sessionId = genNextSessionId()
 	c.state = int32(ConnStateInit)
 	c.attrMap = sync.Map{}
-	c.sendBuff = ringbuffer.NewRingBuffer(0xFFFFFFFF)
-	c.rcvBuff = ringbuffer.NewRingBuffer(0xFFFFFFFF)
+	c.sendBuff = ringbuffer.NewRingBuffer(sendBuffSize)
+	c.rcvBuff = ringbuffer.NewRingBuffer(rcvBuffSize)
 
 	return c
 }
@@ -33,10 +33,13 @@ func NewNetConn() *NetConn {
 type NetPollCore struct {
 	logger log.Logger
 
-	numLoops    int
-	loadBalance LoadBalance
-	polls       []*Poll
-	acceptPoll  *Poll
+	numLoops             int
+	loadBalance          LoadBalance
+	socketSendBufferSize int
+	socketRcvBufferSize  int
+
+	polls      []*Poll
+	acceptPoll *Poll
 
 	listenFd      int32
 	waitConnMap   sync.Map // sessionId->connection
@@ -56,6 +59,8 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore.logger = options.logger
 	netcore.loadBalance = options.loadBalance
 	netcore.eventHandler = options.eventHandler
+	netcore.socketSendBufferSize = options.socketSendBufferSize
+	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.startLoop()
 
 	netcore.waitConnMap = sync.Map{}
@@ -197,7 +202,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 // implement network core TcpConnect
 func (netcore *NetPollCore) TcpConnect(host string, port int) error {
 
-	conn := NewNetConn()
+	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
 	conn.peerHost = host
 	conn.peerPort = port

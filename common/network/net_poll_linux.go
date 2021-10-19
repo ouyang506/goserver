@@ -123,6 +123,22 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 		return err
 	}
 
+	if poll.netcore.socketSendBufferSize > 0 {
+		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketSendBufferSize)
+		if err != nil {
+			poll.logger.LogError("tcpConnect set socket send buffer size option error: %v", err)
+			return err
+		}
+	}
+
+	if poll.netcore.socketRcvBufferSize > 0 {
+		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketRcvBufferSize)
+		if err != nil {
+			poll.logger.LogError("tcpConnect set socket rcv buffer size option error: %v", err)
+			return err
+		}
+	}
+
 	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
 	if tcpAddr.IP != nil {
 		if len(tcpAddr.IP) == 16 {
@@ -289,9 +305,28 @@ func (poll *Poll) loopAccept(fd int) error {
 		}
 		return err
 	}
+
 	if err := unix.SetNonblock(nfd, true); err != nil {
+		poll.logger.LogError("loop accept set socket non block option error: %v", err)
 		return err
 	}
+
+	if poll.netcore.socketSendBufferSize > 0 {
+		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketSendBufferSize)
+		if err != nil {
+			poll.logger.LogError("loop accept set socket send buffer size option error: %v", err)
+			return err
+		}
+	}
+
+	if poll.netcore.socketRcvBufferSize > 0 {
+		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketRcvBufferSize)
+		if err != nil {
+			poll.logger.LogError("loop accept set socket rcv buffer size option error: %v", err)
+			return err
+		}
+	}
+
 	peerHost := ""
 	peerPort := 0
 	switch sa.(type) {
@@ -301,13 +336,12 @@ func (poll *Poll) loopAccept(fd int) error {
 		peerPort = sa4.Port
 		poll.logger.LogInfo("accept connection  fd : %d, remote_addr: %v, remote_port :%v",
 			nfd, peerHost, peerPort)
-		break
 	default:
 		poll.logger.LogInfo("accept connection  fd : %d, sa : %+v", nfd, sa)
 	}
 
 	// add connection to pool
-	conn := NewNetConn()
+	conn := NewNetConn(poll.netcore.socketSendBufferSize, poll.netcore.socketRcvBufferSize)
 	conn.fd = nfd
 	conn.state = int32(ConnStateConnected)
 	conn.peerHost = peerHost

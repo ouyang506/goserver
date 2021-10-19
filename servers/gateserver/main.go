@@ -17,6 +17,8 @@ func main() {
 	host := "127.0.0.1"
 	port := 9000
 	numberLoops := 0
+	sendBuffSize := 32 * 1024
+	rcvBuffSize := 32 * 1024
 	logger := log.NewCommonLogger()
 	logger.AddSink(log.NewStdLogSink())
 	logger.AddSink(log.NewFileLogSink("./log/"))
@@ -27,7 +29,8 @@ func main() {
 	logger.LogInfo("gateserver start .")
 
 	net = network.NewNetworkCore(network.WithEventHandler(eventHandler), network.WithLogger(logger),
-		network.WithNumLoop(numberLoops), network.WithLoadBalance(lb))
+		network.WithNumLoop(numberLoops), network.WithLoadBalance(lb),
+		network.WithSocketSendBufferSize(sendBuffSize), network.WithSocketRcvBufferSize(rcvBuffSize))
 
 	go startClient(net, host, port)
 
