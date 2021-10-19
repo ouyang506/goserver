@@ -19,7 +19,7 @@ func NewFileLogSink(logDir string) *FileLogSink {
 
 	_, err := os.Stat(logDir)
 	if os.IsNotExist(err) {
-		os.Mkdir(logDir, os.ModePerm)
+		os.Mkdir(logDir, os.FileMode(0770))
 	}
 
 	sink := &FileLogSink{
@@ -31,14 +31,14 @@ func (sink *FileLogSink) getFileName(t time.Time) string {
 	return t.Format("2006_01_02") + ".log"
 }
 func (sink *FileLogSink) getFile(fileName string) (*os.File, error) {
-	f, err := os.OpenFile(sink.logDir+fileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 660)
+	f, err := os.OpenFile(sink.logDir+fileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, os.FileMode(0660))
 	return f, err
 }
 
 func (sink *FileLogSink) Sink(content *LogContent) {
 	t := content.logTime
 	fileName := sink.getFileName(t)
-	if sink.curFileName == fileName {
+	if sink.curFileName != fileName {
 		if sink.curFile != nil {
 			sink.curFile.Close()
 		}
