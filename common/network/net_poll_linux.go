@@ -139,6 +139,16 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 		}
 	}
 
+	tcpNodelay := 0
+	if poll.netcore.socketTcpNoDelay {
+		tcpNodelay = 1
+	}
+	err = unix.SetsockoptInt(fd, unix.IPPROTO_TCP, unix.TCP_NODELAY, tcpNodelay)
+	if err != nil {
+		poll.logger.LogError("tcpConnect set socket tcp_nodelay option error: %v", err)
+		return err
+	}
+
 	sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
 	if tcpAddr.IP != nil {
 		if len(tcpAddr.IP) == 16 {
@@ -325,6 +335,16 @@ func (poll *Poll) loopAccept(fd int) error {
 			poll.logger.LogError("loop accept set socket rcv buffer size option error: %v", err)
 			return err
 		}
+	}
+
+	tcpNodelay := 0
+	if poll.netcore.socketTcpNoDelay {
+		tcpNodelay = 1
+	}
+	err = unix.SetsockoptInt(fd, unix.IPPROTO_TCP, unix.TCP_NODELAY, tcpNodelay)
+	if err != nil {
+		poll.logger.LogError("loop accept set socket tcp_nodelay option error: %v", err)
+		return err
 	}
 
 	peerHost := ""

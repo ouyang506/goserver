@@ -24,19 +24,25 @@ type NetConn struct {
 	tcpConn       *net.TCPConn
 }
 
-func NewNetConn() *NetConn {
+func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {
 	c := &NetConn{}
 	c.sessionId = genNextSessionId()
 	c.state = int32(ConnStateInit)
 	c.attrMap = sync.Map{}
-	c.sendChann = make(chan []byte, 65535)
+	c.sendChann = make(chan []byte, sendBuffSize)
+	c.sendBuff = make([]byte, 0, sendBuffSize)
+	c.rcvBuff = make([]byte, 0, rcvBuffSize)
 	return c
 }
 
 // NetPollCore implements the NetworkCore interface
 type NetPollCore struct {
-	logger        log.Logger
-	eventHandler  NetEventHandler
+	logger               log.Logger
+	eventHandler         NetEventHandler
+	socketSendBufferSize int
+	socketRcvBufferSize  int
+	socketTcpNoDelay     bool
+
 	listener      net.TCPListener
 	connMap       sync.Map // sessionId->connection
 	waitConnMap   sync.Map // sessionId->connection
@@ -48,6 +54,9 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore := &NetPollCore{}
 	netcore.logger = options.logger
 	netcore.eventHandler = options.eventHandler
+	netcore.socketSendBufferSize = options.socketSendBufferSize
+	netcore.socketRcvBufferSize = options.socketRcvBufferSize
+	netcore.socketTcpNoDelay = options.socketTcpNoDelay
 	netcore.connMap = sync.Map{}
 	netcore.waitConnMap = sync.Map{}
 	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)
@@ -84,6 +93,10 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 			return true
 		}
 		conn.tcpConn = tcpConn.(*net.TCPConn)
+		conn.tcpConn.SetWriteBuffer(netcore.socketSendBufferSize)
+		conn.tcpConn.SetReadBuffer(netcore.socketRcvBufferSize)
+		conn.tcpConn.SetNoDelay(netcore.socketTcpNoDelay)
+
 		conn.SetConnState(ConnStateConnected)
 		conn.lastTryConTime = 0
 
@@ -108,9 +121,12 @@ func (netcore *NetPollCore) loopAccept() {
 			continue
 		}
 
-		conn := NewNetConn()
+		conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 		conn.state = int32(ConnStateConnected)
 		conn.tcpConn = tcpConn
+		conn.tcpConn.SetWriteBuffer(netcore.socketSendBufferSize)
+		conn.tcpConn.SetReadBuffer(netcore.socketRcvBufferSize)
+		conn.tcpConn.SetNoDelay(netcore.socketTcpNoDelay)
 		remoteAddr := tcpConn.RemoteAddr().String()
 		addrSplits := strings.Split(remoteAddr, ":")
 		if len(addrSplits) >= 2 {
@@ -247,7 +263,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 }
 
 func (netcore *NetPollCore) TcpConnect(host string, port int) error {
-	conn := NewNetConn()
+	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
 	conn.peerHost = host
 	conn.peerPort = port

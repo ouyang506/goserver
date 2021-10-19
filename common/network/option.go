@@ -10,6 +10,7 @@ type Options struct {
 	eventHandler         NetEventHandler
 	socketSendBufferSize int
 	socketRcvBufferSize  int
+	socketTcpNoDelay     bool
 	logger               log.Logger
 }
 
@@ -48,6 +49,12 @@ func WithSocketSendBufferSize(sendBufSize int) Option {
 func WithSocketRcvBufferSize(rcvBufSize int) Option {
 	return func(ops *Options) {
 		ops.socketRcvBufferSize = rcvBufSize
+	}
+}
+
+func WithSocketTcpNoDelay(tcpNoDelay bool) Option {
+	return func(ops *Options) {
+		ops.socketTcpNoDelay = tcpNoDelay
 	}
 }
 

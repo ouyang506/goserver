@@ -30,7 +30,8 @@ func main() {
 
 	net = network.NewNetworkCore(network.WithEventHandler(eventHandler), network.WithLogger(logger),
 		network.WithNumLoop(numberLoops), network.WithLoadBalance(lb),
-		network.WithSocketSendBufferSize(sendBuffSize), network.WithSocketRcvBufferSize(rcvBuffSize))
+		network.WithSocketSendBufferSize(sendBuffSize), network.WithSocketRcvBufferSize(rcvBuffSize),
+		network.WithSocketTcpNoDelay(true))
 
 	go startClient(net, host, port)
 
