@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -109,7 +111,12 @@ func (netcore *NetPollCore) loopAccept() {
 		conn := NewNetConn()
 		conn.state = int32(ConnStateConnected)
 		conn.tcpConn = tcpConn
-		//conn.peerHost = tcpConn.RemoteAddr()
+		remoteAddr := tcpConn.RemoteAddr().String()
+		addrSplits := strings.Split(remoteAddr, ":")
+		if len(addrSplits) >= 2 {
+			conn.peerHost = addrSplits[0]
+			conn.peerPort, _ = strconv.Atoi(addrSplits[1])
+		}
 
 		netcore.connMap.Store(conn.sessionId, conn)
 		netcore.eventHandler.OnAccept(conn)
