@@ -289,6 +289,12 @@ func (poll *Poll) loopEpollWait() error {
 				continue
 			}
 
+			if int(pollEvent) & ^int(unix.EPOLLIN) & ^int(unix.EPOLLOUT) > 0 {
+				poll.logger.LogInfo("rcv unexpected event, close the socket : %d, events :%v", eventFd, pollEvent)
+				poll.loopError(eventFd)
+				continue
+			}
+
 			if pollEvent&unix.EPOLLIN > 0 {
 				poll.loopRead(eventFd)
 			}
@@ -296,10 +302,6 @@ func (poll *Poll) loopEpollWait() error {
 				poll.loopWrite(eventFd)
 			}
 
-			if int(pollEvent) & ^int(unix.EPOLLIN) & ^int(unix.EPOLLOUT) > 0 {
-				poll.logger.LogInfo("rcv unexpected event, close the socket : %d, events :%v", eventFd, pollEvent)
-				poll.loopError(eventFd)
-			}
 		}
 	}
 
@@ -450,34 +452,49 @@ func (poll *Poll) loopWrite(fd int) error {
 		conn.state = int32(ConnStateConnected)
 		poll.netcore.removeWaitConn(conn.sessionId)
 		poll.eventHandler.OnConnected(conn)
-		if !conn.sendBuff.IsEmpty() {
-			poll.modReadWrite(fd)
-		} else {
-			poll.modRead(fd)
-		}
 	}
 
 	if conn.sendBuff.IsEmpty() {
+		poll.modRead(fd)
 		return nil
 	}
-	b, _ := conn.sendBuff.PeekAll()
-	n, err := unix.Write(conn.fd, b)
-	if err != nil {
-		if err == unix.EAGAIN {
-			poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
-			conn.sendBuff.Discard(n)
 
-			if !conn.sendBuff.IsEmpty() {
-				poll.modReadWrite(conn.fd)
+	head, tail := conn.sendBuff.PeekAll()
+	discardCnt := 0
+	for _, b := range [2][]byte{head, tail} {
+		if len(b) <= 0 {
+			break
+		}
+		n, err := unix.Write(conn.fd, b)
+		if err != nil {
+			if err == unix.EAGAIN {
+				poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
+				discardCnt += n
+				break
+			} else {
+				poll.logger.LogError("poll write error : %v", err)
+				conn.sendBuff.Reset()
+				poll.close(conn.fd)
+				return err
 			}
-
 		} else {
-			poll.logger.LogError("poll write error : %v", err)
-			poll.close(conn.fd)
-			return err
+			if n != len(b) {
+				poll.logger.LogError("poll write return len error, write len:%d, data len:%d", n, len(b))
+				conn.sendBuff.Reset()
+				poll.close(conn.fd)
+				return errors.New("write return length error")
+			}
+			discardCnt += n
 		}
 	}
-	conn.sendBuff.Reset()
+
+	conn.sendBuff.Discard(discardCnt)
+
+	if !conn.sendBuff.IsEmpty() {
+		poll.modRead(fd)
+	} else {
+		poll.modReadWrite(fd)
+	}
 
 	return nil
 }
