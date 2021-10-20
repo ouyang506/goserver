@@ -172,6 +172,19 @@ func (r *RingBuffer) Discard(n int) {
 	}
 }
 
+// Foward advances the write pointer
+func (r *RingBuffer) Foward(n int) {
+	if n <= 0 {
+		return
+	}
+	if n <= r.Free() {
+		r.w = (r.w + n) % r.size
+	} else {
+		r.w = r.r
+	}
+	r.isEmpty = false
+}
+
 // Read reads up to len(p) bytes into p. It returns the number of bytes read (0 <= n <= len(p)) and any error
 // encountered.
 // Even if Read returns n < len(p), it may use all of p as scratch space during the call.
