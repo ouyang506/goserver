@@ -106,6 +106,59 @@ func (r *RingBuffer) PeekAll() (head []byte, tail []byte) {
 	return
 }
 
+// PeekFree returns the next free n bytes without advancing the write pointer.
+func (r *RingBuffer) PeekFree(n int) (head []byte, tail []byte) {
+	if r.IsFull() {
+		return
+	}
+
+	if n <= 0 {
+		return
+	}
+
+	if r.w > r.r {
+		if r.size-r.w >= n {
+			head = r.buf[r.w : r.w+n]
+			return
+		}
+		head = r.buf[r.w:] // asset(r.w != 0)
+		if r.r > n-len(head) {
+			tail = r.buf[:n-len(head)]
+		} else {
+			if r.r != 0 {
+				tail = r.buf[:r.r]
+			}
+		}
+		return
+	}
+
+	if r.r-r.w > n {
+		head = r.buf[r.w : r.w+n]
+	} else {
+		head = r.buf[r.w:r.r] // asset(r.r != r.w)
+	}
+	return
+}
+
+// PeekFreeAll returns all bytes without advancing the write pointer.
+func (r *RingBuffer) PeekFreeAll() (head []byte, tail []byte) {
+	if r.IsFull() {
+		return
+	}
+
+	if r.w > r.r {
+		head = r.buf[r.w:] // asset(r.w != 0)
+		if r.r != 0 {
+			tail = r.buf[:r.r]
+		}
+		return
+	}
+
+	head = r.buf[r.w:r.r] // asset(r.r != r.w)
+	tail = nil
+	return
+}
+
 // Discard skips the next n bytes by advancing the read pointer.
 func (r *RingBuffer) Discard(n int) {
 	if n <= 0 {
