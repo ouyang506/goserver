@@ -460,7 +460,7 @@ func (poll *Poll) loopWrite(fd int) error {
 	}
 
 	head, tail := conn.sendBuff.PeekAll()
-	discardCnt := 0
+	totalWrite := 0
 	for _, b := range [2][]byte{head, tail} {
 		if len(b) <= 0 {
 			break
@@ -469,7 +469,7 @@ func (poll *Poll) loopWrite(fd int) error {
 		if err != nil {
 			if err == unix.EAGAIN {
 				poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
-				discardCnt += n
+				totalWrite += n
 				break
 			} else {
 				poll.logger.LogError("poll write error : %v", err)
@@ -484,11 +484,11 @@ func (poll *Poll) loopWrite(fd int) error {
 				poll.close(conn.fd)
 				return errors.New("write return length error")
 			}
-			discardCnt += n
+			totalWrite += n
 		}
 	}
 
-	conn.sendBuff.Discard(discardCnt)
+	conn.sendBuff.Discard(totalWrite)
 
 	if !conn.sendBuff.IsEmpty() {
 		poll.modRead(fd)
