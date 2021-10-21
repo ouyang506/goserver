@@ -38,6 +38,7 @@ type NetPollCore struct {
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
+	codec                Codec
 
 	polls      []*Poll
 	acceptPoll *Poll
@@ -63,6 +64,7 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore.socketSendBufferSize = options.socketSendBufferSize
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.socketTcpNoDelay = options.socketTcpNoDelay
+	netcore.codec = options.codec
 	netcore.startLoop()
 
 	netcore.waitConnMap = sync.Map{}

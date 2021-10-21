@@ -135,7 +135,11 @@ func (r *RingBuffer) PeekFree(n int) (head []byte, tail []byte) {
 	if r.r-r.w > n {
 		head = r.buf[r.w : r.w+n]
 	} else {
-		head = r.buf[r.w:r.r] // asset(r.r != r.w)
+		if r.isEmpty {
+			head = r.buf[:n] // asset reseted
+		} else {
+			head = r.buf[r.w:r.r]
+		}
 	}
 	return
 }
@@ -154,8 +158,11 @@ func (r *RingBuffer) PeekFreeAll() (head []byte, tail []byte) {
 		return
 	}
 
-	head = r.buf[r.w:r.r] // asset(r.r != r.w)
-	tail = nil
+	if r.isEmpty {
+		head = r.buf
+	} else {
+		head = r.buf[r.w:r.r]
+	}
 	return
 }
 

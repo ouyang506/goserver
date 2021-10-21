@@ -25,13 +25,14 @@ func main() {
 	logger.Start()
 	eventHandler := NewCommNetEventHandler(logger)
 	lb := network.NewLoadBalanceRoundRobin(numberLoops)
+	codec := network.NewVariableFrameLenCodec()
 
 	logger.LogInfo("gateserver start .")
 
-	net = network.NewNetworkCore(network.WithEventHandler(eventHandler), network.WithLogger(logger),
+	net = network.NewNetworkCore(network.WithLogger(logger), network.WithEventHandler(eventHandler),
 		network.WithNumLoop(numberLoops), network.WithLoadBalance(lb),
 		network.WithSocketSendBufferSize(sendBuffSize), network.WithSocketRcvBufferSize(rcvBuffSize),
-		network.WithSocketTcpNoDelay(true))
+		network.WithSocketTcpNoDelay(true), network.WithFrameCodec(codec))
 
 	go startClient(net, host, port)
 

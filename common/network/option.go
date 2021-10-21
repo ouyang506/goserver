@@ -5,13 +5,14 @@ import "common/log"
 type Option func(ops *Options)
 
 type Options struct {
+	logger               log.Logger
 	numLoops             int
 	loadBalance          LoadBalance
 	eventHandler         NetEventHandler
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
-	logger               log.Logger
+	codec                Codec
 }
 
 func loadOptions(op []Option) *Options {
@@ -20,6 +21,12 @@ func loadOptions(op []Option) *Options {
 		f(ops)
 	}
 	return ops
+}
+
+func WithLogger(logger log.Logger) Option {
+	return func(ops *Options) {
+		ops.logger = logger
+	}
 }
 
 func WithNumLoop(numberLoops int) Option {
@@ -58,8 +65,8 @@ func WithSocketTcpNoDelay(tcpNoDelay bool) Option {
 	}
 }
 
-func WithLogger(logger log.Logger) Option {
+func WithFrameCodec(codec Codec) Option {
 	return func(ops *Options) {
-		ops.logger = logger
+		ops.codec = codec
 	}
 }

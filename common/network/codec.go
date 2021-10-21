@@ -21,6 +21,9 @@ type FixedFrameLenCodec struct {
 type VariableFrameLenCodec struct {
 }
 
+func NewVariableFrameLenCodec() *VariableFrameLenCodec {
+	return &VariableFrameLenCodec{}
+}
 func (cc *VariableFrameLenCodec) Encode(buf []byte, ring *ringbuffer.RingBuffer) (err error) {
 	length := len(buf)
 	if length <= 0 {

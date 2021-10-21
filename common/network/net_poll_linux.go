@@ -189,6 +189,10 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 }
 
 func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
+	if len(buff) <= 0 {
+		return nil
+	}
+
 	c := poll.getConnection(sessionId)
 	if c == nil {
 		return errors.New("connection session not found")
@@ -197,38 +201,13 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 		return errors.New("connection closed")
 	}
 
-	b := buff
-	appendFlag := false
-	if !c.sendBuff.IsEmpty() {
-		c.sendBuff.Write(buff)
-		b, _ = c.sendBuff.PeekAll()
-		appendFlag = true
-	}
-	n, err := unix.Write(c.fd, b)
-	//poll.logger.LogDebug("call unix write, fd: %v, sendBuff:%v", c.fd, string(c.sendBuff))
+	err := poll.netcore.codec.Encode(buff, c.sendBuff)
 	if err != nil {
-		if err == unix.EAGAIN {
-			poll.logger.LogDebug("TcpSend write return EAGAIN, fd:%d", c.fd)
-			if appendFlag {
-				c.sendBuff.Discard(n)
-			} else {
-				c.sendBuff.Write(buff[n:])
-			}
-
-			if !c.sendBuff.IsEmpty() {
-				poll.modReadWrite(c.fd)
-			}
-
-		} else {
-			poll.logger.LogError("poll tcp send error : %v", err)
-			poll.close(c.fd)
-			return err
-		}
-	} else {
-		poll.logger.LogDebug("send buff : %s, bufflen: %d, senLen:%d", string(b), n, n)
-		c.sendBuff.Reset()
+		poll.logger.LogError("TcpSend encode buff error:%s", err)
+		poll.close(c.fd)
+		return err
 	}
-	return nil
+	return poll.loopWrite(c.fd) //TODO:会多一次event_mod
 }
 
 func (poll *Poll) wake(t *EventTask) error {
@@ -401,14 +380,16 @@ func (poll *Poll) loopRead(fd int) error {
 		return errors.New("loop read connection not found")
 	}
 
-	for {
-		packet := make([]byte, 1024)
-		n, err := unix.Read(fd, packet)
-
+	head, tail := c.rcvBuff.PeekFreeAll()
+	totalRead := 0
+	for _, buff := range [2][]byte{head, tail} {
+		if len(buff) <= 0 {
+			break
+		}
+		n, err := unix.Read(fd, buff)
 		if err != nil {
 			if err == unix.EAGAIN {
 				poll.logger.LogDebug("loopRead read return EAGAIN, fd:%d", fd)
-				poll.modReadWrite(fd)
 				break
 			}
 
@@ -423,11 +404,30 @@ func (poll *Poll) loopRead(fd int) error {
 			return fmt.Errorf("connnection read error length : %d, fd : %d", n, fd)
 		}
 
-		poll.logger.LogDebug("rcv buffer :%v", string(packet[0:n]))
-		if n < len(packet) {
+		totalRead += n
+
+		if n < len(buff) {
 			break
 		}
 	}
+
+	if totalRead > 0 {
+		c.rcvBuff.Foward(totalRead)
+		for {
+			msgBuff, err := poll.netcore.codec.Decode(c.rcvBuff)
+			if err != nil {
+				poll.logger.LogError("loop read decode msg error:%s, fd:%d", err, c.fd)
+				poll.close(fd)
+				return err
+			}
+
+			if len(msgBuff) <= 0 {
+				break
+			}
+			poll.logger.LogDebug("rcv buffer :%v", string(msgBuff))
+		}
+	}
+
 	if !c.sendBuff.IsEmpty() {
 		poll.modRead(fd)
 	} else {
