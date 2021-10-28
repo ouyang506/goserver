@@ -277,7 +277,7 @@ func (r *RingBuffer) Write(p []byte) (n int, err error) {
 
 	free := r.Free()
 	if n > free {
-		r.grow(r.size + n - free)
+		r.Grow(r.size + n - free)
 	}
 
 	if r.w >= r.r {
@@ -308,7 +308,7 @@ func (r *RingBuffer) Write(p []byte) (n int, err error) {
 // WriteByte writes one byte into buffer.
 func (r *RingBuffer) WriteByte(c byte) error {
 	if r.Free() < 1 {
-		r.grow(1)
+		r.Grow(1)
 	}
 	r.buf[r.w] = c
 	r.w++
@@ -379,7 +379,7 @@ func (r *RingBuffer) Reset() {
 	r.r, r.w = 0, 0
 }
 
-func (r *RingBuffer) grow(newCap int) {
+func (r *RingBuffer) Grow(newCap int) {
 	if n := r.size; n == 0 {
 		if newCap <= defaultBufferSize {
 			newCap = defaultBufferSize

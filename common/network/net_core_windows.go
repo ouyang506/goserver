@@ -248,6 +248,11 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 			if len(msgBuf) > 0 {
 				netcore.logger.LogDebug("session:%v rcv data : %v", conn.sessionId, string(msgBuf))
 			} else {
+				if conn.rcvBuff.IsFull() {
+					oldCap := conn.rcvBuff.Cap()
+					conn.rcvBuff.Grow(oldCap + oldCap/2)
+					netcore.logger.LogInfo("loop read grow rcv buffer capcity from %v to %v, sessionId:%v", oldCap, conn.rcvBuff.Cap(), conn.sessionId)
+				}
 				break
 			}
 		}

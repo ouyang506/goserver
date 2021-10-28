@@ -380,51 +380,67 @@ func (poll *Poll) loopRead(fd int) error {
 		return errors.New("loop read connection not found")
 	}
 
-	head, tail := c.rcvBuff.PeekFreeAll()
-	totalRead := 0
-	for _, buff := range [2][]byte{head, tail} {
-		if len(buff) <= 0 {
-			break
-		}
-		n, err := unix.Read(fd, buff)
-		if err != nil {
-			if err == unix.EAGAIN {
-				poll.logger.LogDebug("loopRead read return EAGAIN, fd:%d", fd)
+	bReadFinish := false // case wing buffer full but not read all from socket
+	for {
+		head, tail := c.rcvBuff.PeekFreeAll()
+		totalRead := 0
+
+		for _, buff := range [2][]byte{head, tail} {
+			if len(buff) <= 0 {
 				break
 			}
-
-			poll.logger.LogError("connnection read error : %s, force close the socket :%d", err, fd)
-			poll.close(fd)
-			return fmt.Errorf("connnection read error : %s, fd : %d", err, fd)
-		}
-
-		if n <= 0 {
-			poll.logger.LogError("connnection read error length : %d, force close the socket :%d", n, fd)
-			poll.close(fd)
-			return fmt.Errorf("connnection read error length : %d, fd : %d", n, fd)
-		}
-
-		totalRead += n
-
-		if n < len(buff) {
-			break
-		}
-	}
-
-	if totalRead > 0 {
-		c.rcvBuff.Foward(totalRead)
-		for {
-			msgBuff, err := poll.netcore.codec.Decode(c.rcvBuff)
+			n, err := unix.Read(fd, buff)
 			if err != nil {
-				poll.logger.LogError("loop read decode msg error:%s, fd:%d", err, c.fd)
+				if err == unix.EAGAIN {
+					poll.logger.LogDebug("loopRead read return EAGAIN, fd:%d", fd)
+					bReadFinish = true
+					break
+				}
+
+				poll.logger.LogError("connnection read error : %s, force close the socket :%d", err, fd)
 				poll.close(fd)
-				return err
+				return fmt.Errorf("connnection read error : %s, fd : %d", err, fd)
 			}
 
-			if len(msgBuff) <= 0 {
+			if n <= 0 {
+				poll.logger.LogError("connnection read error length : %d, force close the socket :%d", n, fd)
+				poll.close(fd)
+				return fmt.Errorf("connnection read error length : %d, fd : %d", n, fd)
+			}
+
+			totalRead += n
+
+			if n < len(buff) {
+				bReadFinish = true
 				break
 			}
-			poll.logger.LogDebug("rcv buffer :%v", string(msgBuff))
+		}
+
+		if totalRead > 0 {
+			c.rcvBuff.Foward(totalRead)
+			for {
+				msgBuff, err := poll.netcore.codec.Decode(c.rcvBuff)
+				if err != nil {
+					poll.logger.LogError("loop read decode msg error:%s, fd:%d", err, c.fd)
+					poll.close(fd)
+					return err
+				}
+
+				if len(msgBuff) <= 0 {
+					break
+				}
+				poll.logger.LogDebug("rcv buffer :%v", string(msgBuff))
+			}
+		}
+
+		if bReadFinish {
+			break
+		} else {
+			//bReadFinish = true // just try again once
+			oldCap := c.rcvBuff.Cap()
+			c.rcvBuff.Grow(oldCap + oldCap/2)
+			poll.logger.LogInfo("loop read grow rcv buffer capcity from %v to %v, fd:%v", oldCap, c.rcvBuff.Cap(), fd)
+			continue
 		}
 	}
 
