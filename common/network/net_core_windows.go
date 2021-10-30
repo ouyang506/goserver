@@ -31,7 +31,7 @@ func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {
 	c.sessionId = genNextSessionId()
 	c.state = int32(ConnStateInit)
 	c.attrMap = sync.Map{}
-	c.sendChann = make(chan []byte, sendBuffSize)
+	c.sendChann = make(chan []byte, sendBuffSize/4)
 	c.sendBuff = ringbuffer.NewRingBuffer(sendBuffSize)
 	c.rcvBuff = ringbuffer.NewRingBuffer(rcvBuffSize)
 	return c

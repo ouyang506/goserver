@@ -1,0 +1,13 @@
+syntax = "proto2";
+package gateway;
+
+
+
+message login_gate_req_t{
+
+}
+
+
+message login_gate_resp_t{
+
+}

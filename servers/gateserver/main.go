@@ -3,6 +3,7 @@ package main
 import (
 	"common/log"
 	"common/network"
+	"common/proto"
 	"strconv"
 	"sync"
 	"time"
@@ -28,6 +29,8 @@ func main() {
 	codec := network.NewVariableFrameLenCodec()
 
 	logger.LogInfo("gateserver start .")
+	a := &proto.LoginGateReqT{}
+	logger.LogDebug("a = %+v", a)
 
 	net = network.NewNetworkCore(network.WithLogger(logger), network.WithEventHandler(eventHandler),
 		network.WithNumLoop(numberLoops), network.WithLoadBalance(lb),
