@@ -1,22 +1,28 @@
-package timer
+package main
 
 import (
+	"fmt"
+	"math"
 	"time"
 )
 
 const (
-	DefaultTimeUnit = time.Millisecond * 10 // 10毫秒
-
 	// | 8bit | 8bit | 8bit | 8bit | 8bit | 8bit | 16bit |
-	Layer         = 7
+	MaxLayer      = 7
 	RootLayerBits = 16
 	LayerBits     = 8
+
+	DefaultTimeAccuracy = time.Millisecond * 10 // 10毫秒
 )
 
 type TimerCallBack func()
 
+type Option struct {
+	TimeAccuracy time.Duration
+}
+
 type Node struct {
-	expire int64
+	expire uint64
 	cb     TimerCallBack
 	l      *NodeList
 }
@@ -44,10 +50,6 @@ func (nl *NodeList) remove(node *Node) bool {
 	return false
 }
 
-func (nl *NodeList) clear() {
-	nl.nodes = nl.nodes[:0]
-}
-
 func (nl *NodeList) forEach(f func(*Node)) {
 	for _, node := range nl.nodes {
 		f(node)
@@ -55,42 +57,63 @@ func (nl *NodeList) forEach(f func(*Node)) {
 }
 
 type WheelTimer struct {
-	stopChannel chan int
+	stopChannel  chan bool
+	timeAccuracy time.Duration
 
-	layerSlotCnts []int
-	layerMasks    []int
+	layerMasks    []uint64
+	layerMaxValue []uint64
 	layerShift    []int
 
-	jiffies    int64 // since wheel timer start
-	layerIndex []int
-
+	jiffies  uint64        // since wheel timer start
 	allNodes [][]*NodeList // all timer nodes
 }
 
-func NewWheelTimer() *WheelTimer {
+func NewWheelTimer(option *Option) *WheelTimer {
 	t := &WheelTimer{}
 
-	t.layerSlotCnts = make([]int, Layer)
-	t.layerMasks = make([]int, Layer)
-	t.layerShift = make([]int, Layer)
-
-	t.layerSlotCnts[0] = 1 << RootLayerBits
-	t.layerMasks[0] = t.layerSlotCnts[0] - 1
-	t.layerShift[0] = 0
-	for i := 1; i <= Layer; i++ {
-		t.layerSlotCnts[i] = 1 << LayerBits
-		t.layerMasks[i] = (t.layerSlotCnts[i] - 1) << (RootLayerBits + i*LayerBits)
-		t.layerShift[i] = RootLayerBits + i*LayerBits
+	if option != nil && option.TimeAccuracy > 0 {
+		t.timeAccuracy = option.TimeAccuracy
+	} else {
+		t.timeAccuracy = DefaultTimeAccuracy
 	}
 
-	t.layerIndex = make([]int, Layer)
+	t.layerMasks = make([]uint64, MaxLayer)
+	t.layerMaxValue = make([]uint64, MaxLayer)
+	t.layerShift = make([]int, MaxLayer)
+
+	t.layerMasks[0] = 1<<RootLayerBits - 1
+	t.layerMaxValue[0] = 1<<RootLayerBits - 1
+	t.layerShift[0] = 0
+	for i := 1; i < MaxLayer; i++ {
+		t.layerMasks[i] = 1<<LayerBits - 1
+		t.layerMaxValue[i] = 1<<(RootLayerBits+i*LayerBits) - 1
+		t.layerShift[i] = RootLayerBits + (i-1)*LayerBits
+	}
+
+	for i := 0; i < MaxLayer; i++ {
+		layerNodes := make([]*NodeList, t.layerMasks[i]+1)
+		for j := 0; j <= int(t.layerMasks[i]); j++ {
+			layerNodes[j] = &NodeList{}
+		}
+		t.allNodes = append(t.allNodes, layerNodes)
+	}
+
 	return t
 }
 
 func (t *WheelTimer) AddTimer(duration time.Duration, cb TimerCallBack) *Node {
+	delta := uint64(duration / t.timeAccuracy)
+	if delta < 1 {
+		// put it to the next root slot if expired now
+		delta = 1
+	}
 
-	expire := t.jiffies + int64(duration)/int64(DefaultTimeUnit)
+	if math.MaxUint64-delta < t.jiffies {
+		// actually a invalid expired time
+		delta = math.MaxUint64 - t.jiffies
+	}
 
+	expire := t.jiffies + delta
 	node := &Node{
 		expire: expire,
 		cb:     cb,
@@ -110,12 +133,10 @@ func (t *WheelTimer) RemoveTimer(n *Node) bool {
 }
 
 func (t *WheelTimer) addNode(node *Node) {
-	expire := node.expire
-	delta := expire - t.jiffies
-	for i := Layer - 1; i >= 0; i-- {
-		mask := int64(t.layerMasks[i])
-		if delta&mask > 0 {
-			idx := (delta & mask) >> t.layerShift[i]
+	delta := node.expire - t.jiffies
+	for i := 0; i < MaxLayer; i++ {
+		if delta < t.layerMaxValue[i] {
+			idx := (node.expire >> t.layerShift[i]) & t.layerMasks[i]
 			nodeList := t.allNodes[i][idx]
 			nodeList.addTail(node)
 			break
@@ -124,23 +145,31 @@ func (t *WheelTimer) addNode(node *Node) {
 }
 
 func (t *WheelTimer) cascade(layer int) {
-	nodeList := t.allNodes[layer][0]
+	idx := (t.jiffies >> t.layerShift[layer]) & t.layerMasks[layer]
+	nodeList := t.allNodes[layer][idx]
+	t.allNodes[layer][idx] = &NodeList{}
+
 	nodeList.forEach(func(node *Node) {
 		t.addNode(node)
 	})
-	nodeList.clear()
+
 }
 
 func (t *WheelTimer) tick(delta int) {
 	for i := 0; i < delta; i++ {
 		t.jiffies++
-		for l := 0; l < Layer-1; l++ {
-			if t.jiffies&int64(t.layerMasks[l]) == 0 {
-				t.cascade(l + 1)
+
+		rootIdx := t.jiffies & t.layerMasks[0]
+		if rootIdx == 0 {
+			for layer := 1; layer < MaxLayer; layer++ {
+				if (t.jiffies>>t.layerShift[layer])&t.layerMasks[layer] == 0 {
+					t.cascade(layer + 1)
+				} else {
+					break
+				}
 			}
 		}
 
-		rootIdx := t.jiffies & int64(t.layerMasks[0])
 		expireList := t.allNodes[0][rootIdx]
 		expireList.forEach(func(n *Node) {
 			n.cb()
@@ -151,13 +180,13 @@ func (t *WheelTimer) tick(delta int) {
 
 func (t *WheelTimer) Run() {
 	lastTime := time.Now().UnixNano()
-	ticker := time.NewTicker(time.Duration(DefaultTimeUnit))
+	ticker := time.NewTicker(t.timeAccuracy)
 	for {
 		select {
 		case <-ticker.C:
 			{
 				currentTime := time.Now().UnixNano()
-				delta := (currentTime - lastTime) / int64(DefaultTimeUnit)
+				delta := (currentTime - lastTime) / int64(t.timeAccuracy)
 				if delta > 0 {
 					t.tick(int(delta))
 				}
@@ -167,4 +196,18 @@ func (t *WheelTimer) Run() {
 			return
 		}
 	}
+}
+
+var (
+	timerMgr = NewWheelTimer(nil)
+)
+
+func f() {
+	fmt.Println(time.Now().Unix())
+	timerMgr.AddTimer(1*time.Second, f)
+}
+
+func main() {
+	timerMgr.AddTimer(1*time.Second, f)
+	timerMgr.Run()
 }
