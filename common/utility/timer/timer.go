@@ -1,7 +1,6 @@
-package main
+package timer
 
 import (
-	"fmt"
 	"math"
 	"time"
 )
@@ -179,14 +178,14 @@ func (t *WheelTimer) tick(delta int) {
 }
 
 func (t *WheelTimer) Run() {
-	lastTime := time.Now().UnixNano()
+	lastTime := time.Now().UnixNano() / int64(t.timeAccuracy)
 	ticker := time.NewTicker(t.timeAccuracy)
 	for {
 		select {
 		case <-ticker.C:
 			{
-				currentTime := time.Now().UnixNano()
-				delta := (currentTime - lastTime) / int64(t.timeAccuracy)
+				currentTime := time.Now().UnixNano() / int64(t.timeAccuracy)
+				delta := currentTime - lastTime
 				if delta > 0 {
 					t.tick(int(delta))
 				}
@@ -196,18 +195,4 @@ func (t *WheelTimer) Run() {
 			return
 		}
 	}
-}
-
-var (
-	timerMgr = NewWheelTimer(nil)
-)
-
-func f() {
-	fmt.Println(time.Now().Unix())
-	timerMgr.AddTimer(1*time.Second, f)
-}
-
-func main() {
-	timerMgr.AddTimer(1*time.Second, f)
-	timerMgr.Run()
 }
