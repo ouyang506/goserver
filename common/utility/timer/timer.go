@@ -2,6 +2,7 @@ package timer
 
 import (
 	"math"
+	"sync"
 	"time"
 )
 
@@ -14,185 +15,229 @@ const (
 	DefaultTimeAccuracy = time.Millisecond * 10 // 10毫秒
 )
 
-type TimerCallBack func()
-
 type Option struct {
 	TimeAccuracy time.Duration
 }
 
-type Node struct {
+type TimerCallBack func()
+
+type TimerNode struct {
 	expire uint64
 	cb     TimerCallBack
-	l      *NodeList
+	l      *TimerNodeList
+	pre    *TimerNode
+	next   *TimerNode
 }
 
-type NodeList struct {
-	nodes []*Node
+type TimerNodeList struct {
+	root *TimerNode
 }
 
-func (nl *NodeList) addTail(node *Node) {
-	node.l = nl
-	nl.nodes = append(nl.nodes, node)
+func newTimerNodeList() *TimerNodeList {
+	l := &TimerNodeList{}
+	l.root = &TimerNode{}
+	l.root.next = l.root
+	l.root.pre = l.root
+	return l
 }
 
-func (nl *NodeList) remove(node *Node) bool {
-	if node.l != nl {
+func (l *TimerNodeList) addTail(node *TimerNode) {
+	node.l = l
+	at := l.root.pre
+
+	node.pre = at
+	node.next = at.next
+	node.pre.next = node
+	node.next.pre = node
+}
+
+func (l *TimerNodeList) remove(node *TimerNode) bool {
+	if node.l != l {
 		return false
 	}
-	for i, n := range nl.nodes {
-		if n == node {
-			nl.nodes = append(nl.nodes[0:i], nl.nodes[i+1:]...)
-			return true
-		}
-	}
 
-	return false
+	node.pre.next = node.next
+	node.next.pre = node.pre
+	node.next = nil // avoid memory leaks
+	node.pre = nil  // avoid memory leaks
+	node.l = nil
+
+	return true
 }
 
-func (nl *NodeList) forEach(f func(*Node)) {
-	for _, node := range nl.nodes {
-		f(node)
+func (l *TimerNodeList) clear() {
+	l.root.next = l.root
+	l.root.pre = l.root
+}
+
+func (nl *TimerNodeList) forEach(f func(*TimerNode)) {
+	if nl.root.next == nl.root {
+		return
+	}
+
+	for n := nl.root.next; n != nl.root; n = n.next {
+		f(n)
 	}
 }
 
-type WheelTimer struct {
-	stopChannel  chan bool
+type TimerWheel struct {
 	timeAccuracy time.Duration
+
+	mutex sync.Mutex
 
 	layerMasks    []uint64
 	layerMaxValue []uint64
 	layerShift    []int
 
-	jiffies  uint64        // since wheel timer start
-	allNodes [][]*NodeList // all timer nodes
+	jiffies      uint64             // since timer wheel start running
+	allNodes     [][]*TimerNodeList // all timer nodes
+	lastTickTime int64
+
+	expiredList []*TimerNode
 }
 
-func NewWheelTimer(option *Option) *WheelTimer {
-	t := &WheelTimer{}
+func NewTimerWheel(option *Option) *TimerWheel {
+	tw := &TimerWheel{}
 
 	if option != nil && option.TimeAccuracy > 0 {
-		t.timeAccuracy = option.TimeAccuracy
+		tw.timeAccuracy = option.TimeAccuracy
 	} else {
-		t.timeAccuracy = DefaultTimeAccuracy
+		tw.timeAccuracy = DefaultTimeAccuracy
 	}
 
-	t.layerMasks = make([]uint64, MaxLayer)
-	t.layerMaxValue = make([]uint64, MaxLayer)
-	t.layerShift = make([]int, MaxLayer)
+	tw.layerMasks = make([]uint64, MaxLayer)
+	tw.layerMaxValue = make([]uint64, MaxLayer)
+	tw.layerShift = make([]int, MaxLayer)
 
-	t.layerMasks[0] = 1<<RootLayerBits - 1
-	t.layerMaxValue[0] = 1<<RootLayerBits - 1
-	t.layerShift[0] = 0
+	tw.layerMasks[0] = 1<<RootLayerBits - 1
+	tw.layerMaxValue[0] = 1<<RootLayerBits - 1
+	tw.layerShift[0] = 0
 	for i := 1; i < MaxLayer; i++ {
-		t.layerMasks[i] = 1<<LayerBits - 1
-		t.layerMaxValue[i] = 1<<(RootLayerBits+i*LayerBits) - 1
-		t.layerShift[i] = RootLayerBits + (i-1)*LayerBits
+		tw.layerMasks[i] = 1<<LayerBits - 1
+		tw.layerMaxValue[i] = 1<<(RootLayerBits+i*LayerBits) - 1
+		tw.layerShift[i] = RootLayerBits + (i-1)*LayerBits
 	}
 
 	for i := 0; i < MaxLayer; i++ {
-		layerNodes := make([]*NodeList, t.layerMasks[i]+1)
-		for j := 0; j <= int(t.layerMasks[i]); j++ {
-			layerNodes[j] = &NodeList{}
+		layerNodes := make([]*TimerNodeList, tw.layerMasks[i]+1)
+		for j := 0; j <= int(tw.layerMasks[i]); j++ {
+			layerNodes[j] = newTimerNodeList()
 		}
-		t.allNodes = append(t.allNodes, layerNodes)
+		tw.allNodes = append(tw.allNodes, layerNodes)
 	}
 
-	return t
+	tw.lastTickTime = time.Now().UnixNano() / int64(tw.timeAccuracy)
+
+	tw.expiredList = []*TimerNode{}
+	return tw
 }
 
-func (t *WheelTimer) AddTimer(duration time.Duration, cb TimerCallBack) *Node {
-	delta := uint64(duration / t.timeAccuracy)
+func (tw *TimerWheel) Tick() {
+	currentTime := time.Now().UnixNano() / int64(tw.timeAccuracy)
+	delta := currentTime - tw.lastTickTime
+	if delta > 0 {
+		tw.doTick(int(delta))
+	}
+	tw.lastTickTime = currentTime
+}
+
+func (tw *TimerWheel) AddTimer(duration time.Duration, cb TimerCallBack) *TimerNode {
+	delta := uint64(duration / tw.timeAccuracy)
 	if delta < 1 {
 		// put it to the next root slot if expired now
 		delta = 1
 	}
 
-	if math.MaxUint64-delta < t.jiffies {
+	tw.mutex.Lock()
+
+	if math.MaxUint64-delta < tw.jiffies {
 		// actually a invalid expired time
-		delta = math.MaxUint64 - t.jiffies
+		delta = math.MaxUint64 - tw.jiffies
 	}
 
-	expire := t.jiffies + delta
-	node := &Node{
+	expire := tw.jiffies + delta
+	node := &TimerNode{
 		expire: expire,
 		cb:     cb,
 	}
 
-	t.addNode(node)
+	tw.addNode(node)
 
+	tw.mutex.Unlock()
 	return node
 }
 
-func (t *WheelTimer) RemoveTimer(n *Node) bool {
-	nodeList := n.l
-	if nodeList == nil {
-		return false
+func (tw *TimerWheel) RemoveTimer(n *TimerNode) (ret bool) {
+	tw.mutex.Lock()
+
+	if n.l != nil {
+		ret = n.l.remove(n)
 	}
-	return nodeList.remove(n)
+
+	tw.mutex.Unlock()
+	return
 }
 
-func (t *WheelTimer) addNode(node *Node) {
-	delta := node.expire - t.jiffies
+func (tw *TimerWheel) After(duration time.Duration) (chan bool, *TimerNode) {
+	ch := make(chan bool)
+	node := tw.AddTimer(duration, func() {
+		select {
+		case ch <- true:
+		default:
+		}
+	})
+	return ch, node
+}
+
+func (tw *TimerWheel) addNode(node *TimerNode) {
+	delta := node.expire - tw.jiffies
 	for i := 0; i < MaxLayer; i++ {
-		if delta < t.layerMaxValue[i] {
-			idx := (node.expire >> t.layerShift[i]) & t.layerMasks[i]
-			nodeList := t.allNodes[i][idx]
+		if delta < tw.layerMaxValue[i] {
+			idx := (node.expire >> tw.layerShift[i]) & tw.layerMasks[i]
+			nodeList := tw.allNodes[i][idx]
 			nodeList.addTail(node)
 			break
 		}
 	}
 }
 
-func (t *WheelTimer) cascade(layer int) {
-	idx := (t.jiffies >> t.layerShift[layer]) & t.layerMasks[layer]
-	nodeList := t.allNodes[layer][idx]
-	t.allNodes[layer][idx] = &NodeList{}
+func (tw *TimerWheel) cascade(layer int) {
+	idx := (tw.jiffies >> tw.layerShift[layer]) & tw.layerMasks[layer]
+	nodeList := tw.allNodes[layer][idx]
+	tw.allNodes[layer][idx].clear()
 
-	nodeList.forEach(func(node *Node) {
-		t.addNode(node)
+	nodeList.forEach(func(node *TimerNode) {
+		tw.addNode(node)
 	})
 
 }
 
-func (t *WheelTimer) tick(delta int) {
+func (tw *TimerWheel) doTick(delta int) {
 	for i := 0; i < delta; i++ {
-		t.jiffies++
+		tw.mutex.Lock()
+		tw.jiffies++
 
-		rootIdx := t.jiffies & t.layerMasks[0]
+		rootIdx := tw.jiffies & tw.layerMasks[0]
 		if rootIdx == 0 {
 			for layer := 1; layer < MaxLayer; layer++ {
-				if (t.jiffies>>t.layerShift[layer])&t.layerMasks[layer] == 0 {
-					t.cascade(layer + 1)
+				if (tw.jiffies>>tw.layerShift[layer])&tw.layerMasks[layer] == 0 {
+					tw.cascade(layer + 1)
 				} else {
 					break
 				}
 			}
 		}
 
-		expireList := t.allNodes[0][rootIdx]
-		expireList.forEach(func(n *Node) {
-			n.cb()
+		expireList := tw.allNodes[0][rootIdx]
+		tw.expiredList = tw.expiredList[:0]
+		expireList.forEach(func(n *TimerNode) {
+			tw.expiredList = append(tw.expiredList, n)
 		})
-	}
 
-}
+		tw.mutex.Unlock()
 
-func (t *WheelTimer) Run() {
-	lastTime := time.Now().UnixNano() / int64(t.timeAccuracy)
-	ticker := time.NewTicker(t.timeAccuracy)
-	for {
-		select {
-		case <-ticker.C:
-			{
-				currentTime := time.Now().UnixNano() / int64(t.timeAccuracy)
-				delta := currentTime - lastTime
-				if delta > 0 {
-					t.tick(int(delta))
-				}
-				lastTime = currentTime
-			}
-		case <-t.stopChannel:
-			return
+		for _, n := range tw.expiredList {
+			n.cb()
 		}
 	}
 }
