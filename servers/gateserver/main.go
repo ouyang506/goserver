@@ -4,6 +4,7 @@ import (
 	"common/log"
 	"common/network"
 	"common/proto"
+	"common/registry"
 	"strconv"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ var (
 )
 
 func main() {
+
 	host := "127.0.0.1"
 	port := 9000
 	numberLoops := 0
@@ -24,6 +26,9 @@ func main() {
 	logger.AddSink(log.NewStdLogSink())
 	logger.AddSink(log.NewFileLogSink("./log/"))
 	logger.Start()
+
+	doRegister(logger)
+
 	eventHandler := NewCommNetEventHandler(logger)
 	lb := network.NewLoadBalanceRoundRobin(numberLoops)
 	codec := network.NewVariableFrameLenCodec()
@@ -74,6 +79,12 @@ func update() {
 			return true
 		})
 	}
+}
+
+func doRegister(logger log.Logger) {
+	etcdClient := registry.NewEtcdRegistry(logger, []string{"192.168.104.184:2379"}, "root", "123456", 2*time.Second)
+	regMgr := registry.NewRegistryMgr(etcdClient)
+	regMgr.DoRegister("/services/gate/1", "{'type':'gate', 'host':'127.0.0.1', 'port':5000}", 10)
 }
 
 type CommNetEventHandler struct {
