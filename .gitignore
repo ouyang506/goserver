@@ -3,3 +3,6 @@ vendor
 servers/gateserver/gateserver.exe
 servers/gateserver/gateserver
 servers/gateserver/log/
+software/infra1.etcd
+software/infra2.etcd
+software/infra3.etcd
