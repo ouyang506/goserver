@@ -9,6 +9,10 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+const (
+	EtcdBasePath = "/services/"
+)
+
 type EtcdRegistry struct {
 	logger     log.Logger
 	etcdCfg    *clientv3.Config
@@ -16,14 +20,13 @@ type EtcdRegistry struct {
 }
 
 func NewEtcdRegistry(logger log.Logger, endpoints []string,
-	username string, password string,
-	dailTimeout time.Duration) *EtcdRegistry {
+	username string, password string) *EtcdRegistry {
 
 	etcdRegistry := &EtcdRegistry{
 		logger: logger,
 		etcdCfg: &clientv3.Config{
 			Endpoints:   endpoints,
-			DialTimeout: dailTimeout,
+			DialTimeout: 2 * time.Second,
 			Username:    username,
 			Password:    password,
 		},
@@ -51,29 +54,7 @@ func (reg *EtcdRegistry) close() {
 	}
 }
 
-func (reg *EtcdRegistry) DoRegister(key string, value string, ttl uint32) {
-	go func() {
-		for {
-			err := reg.doRegister(key, value, ttl)
-			if err != nil {
-				reg.logger.LogError("etcd run registry error : %s", err)
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
-
-	go func() {
-		for {
-			err := reg.watch("/services")
-			if err != nil {
-				reg.logger.LogError("etcd run watch error : %s", err)
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
-}
-
-func (reg *EtcdRegistry) doRegister(key string, value string, ttl uint32) error {
+func (reg *EtcdRegistry) RegService(key string, value string, ttl uint32) error {
 	if err := reg.lazyInit(); err != nil {
 		reg.logger.LogError("init etcd client error : %s", err)
 		return err
@@ -93,7 +74,7 @@ func (reg *EtcdRegistry) doRegister(key string, value string, ttl uint32) error 
 
 	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), time.Duration(ttl*1000)*time.Millisecond)
 	defer kvCancelFunc()
-	_, err = kv.Put(kvCtx, key, value, clientv3.WithLease(leaseId))
+	_, err = kv.Put(kvCtx, EtcdBasePath+key, value, clientv3.WithLease(leaseId))
 	if err != nil {
 		return err
 	}
@@ -101,17 +82,11 @@ func (reg *EtcdRegistry) doRegister(key string, value string, ttl uint32) error 
 	tick := time.NewTicker(time.Duration(ttl*1000/10) * time.Millisecond)
 	defer tick.Stop()
 	for {
-		err = nil
-		select {
-		case <-tick.C:
-			err = reg.renewLease(leaseId)
-		}
-		if err != nil {
+		<-tick.C
+		if err := reg.renewLease(leaseId); err != nil {
 			return err
 		}
 	}
-
-	return nil
 }
 
 func (reg *EtcdRegistry) renewLease(leaseId clientv3.LeaseID) error {
@@ -125,12 +100,12 @@ func (reg *EtcdRegistry) renewLease(leaseId clientv3.LeaseID) error {
 	return nil
 }
 
-func (reg *EtcdRegistry) getRegistryInfo(prefix string) (map[string]string, error) {
+func (reg *EtcdRegistry) GetServices() (map[string]string, error) {
 	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), time.Duration(1000)*time.Millisecond)
 	defer kvCancelFunc()
 
 	kv := clientv3.NewKV(reg.etcdClient)
-	resp, err := kv.Get(kvCtx, prefix, clientv3.WithPrefix())
+	resp, err := kv.Get(kvCtx, EtcdBasePath, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +120,7 @@ func (reg *EtcdRegistry) getRegistryInfo(prefix string) (map[string]string, erro
 	return ret, nil
 }
 
-func (reg *EtcdRegistry) watch(prefix string) error {
+func (reg *EtcdRegistry) Watch() (string, string, RegistryEventType, error) {
 	watcher := clientv3.NewWatcher(reg.etcdClient)
 	defer watcher.Close()
 
@@ -155,7 +130,7 @@ func (reg *EtcdRegistry) watch(prefix string) error {
 	for {
 		watchResp, ok := <-watchChann
 		if !ok {
-			return fmt.Errorf("channel closed")
+			return "", "", 0, fmt.Errorf("channel closed")
 		}
 
 		if err := watchResp.Err(); err != nil {
