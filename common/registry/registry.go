@@ -8,8 +8,10 @@ import (
 type Registry interface {
 	RegService(key string, value string, ttl uint32) error
 	GetServices() (map[string]string, error)
-	Watch() (string, string, RegistryEventType, error)
+	Watch(WatchCB) error
 }
+
+type WatchCB func(RegistryEventType, string, string)
 
 type RegistryEventType int
 
@@ -49,6 +51,16 @@ func (mgr *RegistryMgr) DoRegister(key string, value string, ttl uint32) {
 	}()
 
 	go func() {
-
+		for {
+			err := mgr.handler.Watch(mgr.watchServiceCb)
+			if err != nil {
+				mgr.logger.LogError("etcd run registry error : %s", err)
+				time.Sleep(1 * time.Second)
+			}
+		}
 	}()
+}
+
+func (mgr *RegistryMgr) watchServiceCb(eventType RegistryEventType, key, value string) {
+
 }

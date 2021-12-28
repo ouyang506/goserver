@@ -120,17 +120,17 @@ func (reg *EtcdRegistry) GetServices() (map[string]string, error) {
 	return ret, nil
 }
 
-func (reg *EtcdRegistry) Watch() (string, string, RegistryEventType, error) {
+func (reg *EtcdRegistry) Watch(cb WatchCB) error {
 	watcher := clientv3.NewWatcher(reg.etcdClient)
 	defer watcher.Close()
 
 	watchCtx := context.TODO()
-	watchChann := watcher.Watch(watchCtx, prefix, clientv3.WithPrefix())
+	watchChann := watcher.Watch(watchCtx, EtcdBasePath, clientv3.WithPrefix())
 
 	for {
 		watchResp, ok := <-watchChann
 		if !ok {
-			return "", "", 0, fmt.Errorf("channel closed")
+			return fmt.Errorf("channel closed")
 		}
 
 		if err := watchResp.Err(); err != nil {
@@ -146,10 +146,11 @@ func (reg *EtcdRegistry) Watch() (string, string, RegistryEventType, error) {
 			value := string(event.Kv.Value)
 			if event.Type == clientv3.EventTypePut {
 				reg.logger.LogInfo("etcd watch put key : %v, value : %v", key, value)
+				cb(RegistryEventUpdate, key, value)
 			} else if event.Type == clientv3.EventTypeDelete {
 				reg.logger.LogInfo("etcd watch delete key : %v, value : %v", key, value)
+				cb(RegistryEventDelete, key, value)
 			}
 		}
 	}
-	return nil
 }
