@@ -90,6 +90,11 @@ func (reg *EtcdRegistry) RegService(key string, value string, ttl uint32) error 
 }
 
 func (reg *EtcdRegistry) renewLease(leaseId clientv3.LeaseID) error {
+	if err := reg.lazyInit(); err != nil {
+		reg.logger.LogError("init etcd client error : %s", err)
+		return err
+	}
+
 	leaseCtx, leaseCancel := context.WithTimeout(context.Background(), time.Duration(1000)*time.Millisecond)
 	defer leaseCancel()
 	lease := clientv3.NewLease(reg.etcdClient)
@@ -101,6 +106,11 @@ func (reg *EtcdRegistry) renewLease(leaseId clientv3.LeaseID) error {
 }
 
 func (reg *EtcdRegistry) GetServices() (map[string]string, error) {
+	if err := reg.lazyInit(); err != nil {
+		reg.logger.LogError("init etcd client error : %s", err)
+		return nil, err
+	}
+
 	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), time.Duration(1000)*time.Millisecond)
 	defer kvCancelFunc()
 
@@ -120,7 +130,12 @@ func (reg *EtcdRegistry) GetServices() (map[string]string, error) {
 	return ret, nil
 }
 
-func (reg *EtcdRegistry) Watch(cb WatchCB) error {
+func (reg *EtcdRegistry) Watch() (chan WatchEvent, error) {
+	if err := reg.lazyInit(); err != nil {
+		reg.logger.LogError("init etcd client error : %s", err)
+		return nil, err
+	}
+
 	watcher := clientv3.NewWatcher(reg.etcdClient)
 	defer watcher.Close()
 
@@ -130,11 +145,11 @@ func (reg *EtcdRegistry) Watch(cb WatchCB) error {
 	for {
 		watchResp, ok := <-watchChann
 		if !ok {
-			return fmt.Errorf("channel closed")
+			return nil, fmt.Errorf("channel closed")
 		}
 
 		if err := watchResp.Err(); err != nil {
-			return err
+			return nil, err
 		}
 
 		if watchResp.Events == nil {
@@ -144,12 +159,9 @@ func (reg *EtcdRegistry) Watch(cb WatchCB) error {
 		for _, event := range watchResp.Events {
 			key := string(event.Kv.Key)
 			value := string(event.Kv.Value)
-			if event.Type == clientv3.EventTypePut {
-				reg.logger.LogInfo("etcd watch put key : %v, value : %v", key, value)
-				cb(RegistryEventUpdate, key, value)
-			} else if event.Type == clientv3.EventTypeDelete {
-				reg.logger.LogInfo("etcd watch delete key : %v, value : %v", key, value)
-				cb(RegistryEventDelete, key, value)
+			if event.Type == clientv3.EventTypePut || event.Type == clientv3.EventTypeDelete {
+				WatchEvent{}
+
 			}
 		}
 	}

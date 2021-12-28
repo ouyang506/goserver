@@ -2,31 +2,37 @@ package registry
 
 import (
 	"common/log"
+	"sync"
 	"time"
 )
 
 type Registry interface {
 	RegService(key string, value string, ttl uint32) error
 	GetServices() (map[string]string, error)
-	Watch(WatchCB) error
+	Watch() (chan WatchEvent, error)
 }
 
-type WatchCB func(RegistryEventType, string, string)
+type WatchCB func(WatchEventType, string, string)
 
-type RegistryEventType int
+type WatchEventType int
 
 const (
-	RegistryEventNone   RegistryEventType = 0
-	RegistryEventUpdate RegistryEventType = 1
-	RegistryEventDelete RegistryEventType = 2
+	WatchEventTypeNone   WatchEventType = 0
+	WatchEventTypeUpdate WatchEventType = 1
+	WatchEventTypeDelete WatchEventType = 2
 )
 
+type WatchEvent struct {
+	err       error
+	eventType WatchEventType
+	key       string
+	value     string
+}
+
 type RegistryMgr struct {
-	logger  log.Logger
-	handler Registry
-	// key     string
-	// value   string
-	// ttl     uint32
+	logger   log.Logger
+	handler  Registry
+	services sync.Map // map[string]string
 }
 
 func NewRegistryMgr(logger log.Logger, handler Registry) *RegistryMgr {
@@ -40,27 +46,50 @@ func NewRegistryMgr(logger log.Logger, handler Registry) *RegistryMgr {
 }
 
 func (mgr *RegistryMgr) DoRegister(key string, value string, ttl uint32) {
-	go func() {
-		for {
-			err := mgr.handler.RegService(key, value, ttl)
-			if err != nil {
-				mgr.logger.LogError("etcd run registry error : %s", err)
-				time.Sleep(1 * time.Second)
-			}
-		}
-	}()
+	//register self
+	go mgr.regService(key, value, ttl)
 
-	go func() {
-		for {
-			err := mgr.handler.Watch(mgr.watchServiceCb)
-			if err != nil {
-				mgr.logger.LogError("etcd run registry error : %s", err)
-				time.Sleep(1 * time.Second)
-			}
-		}
-	}()
+	// watch service change event
+	go mgr.watch()
 }
 
-func (mgr *RegistryMgr) watchServiceCb(eventType RegistryEventType, key, value string) {
+func (mgr *RegistryMgr) regService(key, value string, ttl uint32) {
+	for {
+		err := mgr.handler.RegService(key, value, ttl)
+		if err != nil {
+			mgr.logger.LogError("RegService error : %s", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+	}
+}
 
+func (mgr *RegistryMgr) watch() {
+	for {
+		watchChan, err := mgr.handler.Watch()
+		if err != nil {
+			mgr.logger.LogError("watch error : %s", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		for {
+			select {
+			case event, err := <-watchChan:
+				{
+					if err {
+						mgr.logger.LogError("watch error : %s", err)
+						time.Sleep(1 * time.Second)
+						continue
+					}
+					if event.eventType == WatchEventTypeUpdate {
+						mgr.services.Store(event.key, event.value)
+					} else if event.eventType == WatchEventTypeDelete {
+						mgr.services.Delete(event.key)
+					}
+				}
+			}
+		}
+
+	}
 }
