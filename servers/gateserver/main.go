@@ -5,7 +5,8 @@ import (
 	"common/network"
 	"common/proto"
 	"common/registry"
-	"strconv"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -27,7 +28,7 @@ func main() {
 	logger.AddSink(log.NewFileLogSink("./log/"))
 	logger.Start()
 
-	doRegister(logger)
+	doRegister(logger, "gateway", 1, host, port)
 
 	eventHandler := NewCommNetEventHandler(logger)
 	lb := network.NewLoadBalanceRoundRobin(numberLoops)
@@ -65,14 +66,14 @@ func update() {
 			c := value.(network.Connection)
 			if c.IsClient() {
 				clienIndex++
-				net.TcpSend(key.(int64), []byte("hello , this is client "+strconv.Itoa(clienIndex)))
+				//net.TcpSend(key.(int64), []byte("hello , this is client "+strconv.Itoa(clienIndex)))
 			} else {
 				count++
 				if count%10 == 0 {
-					net.TcpClose(key.(int64))
+					//net.TcpClose(key.(int64))
 				} else {
 					serverIndex++
-					net.TcpSend(key.(int64), []byte("hello , this is server "+strconv.Itoa(serverIndex)))
+					//net.TcpSend(key.(int64), []byte("hello , this is server "+strconv.Itoa(serverIndex)))
 				}
 			}
 
@@ -81,10 +82,32 @@ func update() {
 	}
 }
 
-func doRegister(logger log.Logger) {
+type RegServiceEntry struct {
+	ServiceType string `json:"service"`
+	InstId      int    `json:"inst"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+}
+
+func doRegister(logger log.Logger, serviceType string, instId int, host string, port int) {
+
 	etcdClient := registry.NewEtcdRegistry(logger, []string{"127.0.0.1:2379"}, "", "")
-	regMgr := registry.NewRegistryMgr(logger, etcdClient)
-	regMgr.DoRegister("/services/gate/1", "{'type':'gate', 'host':'127.0.0.1', 'port':5000}", 10)
+	regMgr := registry.NewRegistryMgr(logger, etcdClient,
+		func(registry.OperType, string, string) {
+		},
+	)
+
+	key := fmt.Sprintf("/%s/%d", serviceType, instId)
+
+	entry := RegServiceEntry{
+		ServiceType: serviceType,
+		InstId:      instId,
+		Host:        host,
+		Port:        port,
+	}
+	value, _ := json.Marshal(entry)
+
+	regMgr.DoRegister(key, string(value), 10)
 }
 
 type CommNetEventHandler struct {

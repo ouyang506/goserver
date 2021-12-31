@@ -1,10 +1,10 @@
 {
 	"folders": [
 		{
-			"path": "common"
+			"path": "servers\\gateserver"
 		},
 		{
-			"path": "servers\\gateserver"
+			"path": "common"
 		}
 	]
 }

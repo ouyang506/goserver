@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	EtcdBasePath = "/services/"
+	EtcdBasePath = "/services"
 )
 
 type EtcdRegistry struct {
@@ -47,12 +47,12 @@ func (reg *EtcdRegistry) lazyInit() error {
 	return nil
 }
 
-func (reg *EtcdRegistry) close() {
-	if reg.etcdClient != nil {
-		reg.etcdClient.Close()
-		reg.etcdClient = nil
-	}
-}
+// func (reg *EtcdRegistry) close() {
+// 	if reg.etcdClient != nil {
+// 		reg.etcdClient.Close()
+// 		reg.etcdClient = nil
+// 	}
+// }
 
 func (reg *EtcdRegistry) RegService(key string, value string, ttl uint32) error {
 	if err := reg.lazyInit(); err != nil {
@@ -137,12 +137,12 @@ func (reg *EtcdRegistry) Watch() (chan WatchEvent, error) {
 	}
 
 	watcher := clientv3.NewWatcher(reg.etcdClient)
-	defer watcher.Close()
+	//defer watcher.Close()
 
-	watchCtx := context.TODO()
+	watchCtx := context.Background()
 	watchChann := watcher.Watch(watchCtx, EtcdBasePath, clientv3.WithPrefix())
 
-	retChan := make(chan WatchEvent, 1024)
+	retChan := make(chan WatchEvent)
 	go func() {
 		for {
 			watchResp, ok := <-watchChann
