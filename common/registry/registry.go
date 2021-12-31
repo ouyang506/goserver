@@ -73,21 +73,22 @@ func (mgr *RegistryMgr) watch() {
 			continue
 		}
 
-		for {
-			select {
-			case event, err := <-watchChan:
-				{
-					if err {
-						mgr.logger.LogError("watch error : %s", err)
-						time.Sleep(1 * time.Second)
-						continue
-					}
-					if event.eventType == WatchEventTypeUpdate {
-						mgr.services.Store(event.key, event.value)
-					} else if event.eventType == WatchEventTypeDelete {
-						mgr.services.Delete(event.key)
-					}
-				}
+		serviceMap, err := mgr.handler.GetServices()
+		if err != nil {
+			mgr.logger.LogError("get services error : %s", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		for k, v := range serviceMap {
+			mgr.services.Store(k, v)
+		}
+
+		for event := range watchChan {
+			if event.eventType == WatchEventTypeUpdate {
+				mgr.services.Store(event.key, event.value)
+			} else if event.eventType == WatchEventTypeDelete {
+				mgr.services.Delete(event.key)
 			}
 		}
 

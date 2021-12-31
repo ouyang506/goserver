@@ -82,8 +82,8 @@ func update() {
 }
 
 func doRegister(logger log.Logger) {
-	etcdClient := registry.NewEtcdRegistry(logger, []string{"192.168.104.184:2379"}, "root", "123456", 2*time.Second)
-	regMgr := registry.NewRegistryMgr(etcdClient)
+	etcdClient := registry.NewEtcdRegistry(logger, []string{"127.0.0.1:2379"}, "", "")
+	regMgr := registry.NewRegistryMgr(logger, etcdClient)
 	regMgr.DoRegister("/services/gate/1", "{'type':'gate', 'host':'127.0.0.1', 'port':5000}", 10)
 }
 

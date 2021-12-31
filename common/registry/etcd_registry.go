@@ -142,27 +142,48 @@ func (reg *EtcdRegistry) Watch() (chan WatchEvent, error) {
 	watchCtx := context.TODO()
 	watchChann := watcher.Watch(watchCtx, EtcdBasePath, clientv3.WithPrefix())
 
-	for {
-		watchResp, ok := <-watchChann
-		if !ok {
-			return nil, fmt.Errorf("channel closed")
-		}
+	retChan := make(chan WatchEvent, 1024)
+	go func() {
+		for {
+			watchResp, ok := <-watchChann
+			if !ok {
+				retChan <- WatchEvent{
+					err: fmt.Errorf("channel closed"),
+				}
+				close(retChan)
+				return
+			}
 
-		if err := watchResp.Err(); err != nil {
-			return nil, err
-		}
+			if err := watchResp.Err(); err != nil {
+				retChan <- WatchEvent{
+					err: err,
+				}
+				close(retChan)
+				return
+			}
 
-		if watchResp.Events == nil {
-			continue
-		}
+			if watchResp.Events == nil {
+				continue
+			}
 
-		for _, event := range watchResp.Events {
-			key := string(event.Kv.Key)
-			value := string(event.Kv.Value)
-			if event.Type == clientv3.EventTypePut || event.Type == clientv3.EventTypeDelete {
-				WatchEvent{}
-
+			for _, event := range watchResp.Events {
+				key := string(event.Kv.Key)
+				value := string(event.Kv.Value)
+				eventType := WatchEventTypeNone
+				if event.Type == clientv3.EventTypePut {
+					eventType = WatchEventTypeUpdate
+				} else if event.Type == clientv3.EventTypeDelete {
+					eventType = WatchEventTypeDelete
+				}
+				retChan <- WatchEvent{
+					err:       nil,
+					eventType: eventType,
+					key:       key,
+					value:     value,
+				}
 			}
 		}
-	}
+	}()
+
+	return retChan, nil
 }
