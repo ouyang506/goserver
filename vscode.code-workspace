@@ -1,10 +1,20 @@
 {
 	"folders": [
 		{
+			"path": "common"
+		},
+		{
 			"path": "servers\\gateserver"
 		},
 		{
-			"path": "common"
+			"path": "servers\\gameserver"
+		},
+		{
+			"path": "servers\\dbserver"
+		},
+		{
+			"path": "clients\\mockclient"
 		}
+		
 	]
 }

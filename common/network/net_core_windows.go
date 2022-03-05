@@ -312,13 +312,13 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 	return nil
 }
 
-func (netcore *NetPollCore) TcpConnect(host string, port int) error {
+func (netcore *NetPollCore) TcpConnect(host string, port int) (int64, error) {
 	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
 	conn.peerHost = host
 	conn.peerPort = port
 	netcore.waitConnMap.Store(conn.sessionId, conn)
-	return nil
+	return conn.GetSessionId(), nil
 }
 
 func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {

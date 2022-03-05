@@ -20,7 +20,7 @@
 package ringbuffer
 
 import (
-	"common/utility/math"
+	"common/utility/mathex"
 	"errors"
 )
 
@@ -43,7 +43,7 @@ func NewRingBuffer(size int) *RingBuffer {
 	if size == 0 {
 		return &RingBuffer{isEmpty: true}
 	}
-	size = math.CeilToPowerOfTwo(size)
+	size = mathex.CeilToPowerOfTwo(size)
 	return &RingBuffer{
 		buf:     make([]byte, size),
 		size:    size,
@@ -384,7 +384,7 @@ func (r *RingBuffer) Grow(newCap int) {
 		if newCap <= defaultBufferSize {
 			newCap = defaultBufferSize
 		} else {
-			newCap = math.CeilToPowerOfTwo(newCap)
+			newCap = mathex.CeilToPowerOfTwo(newCap)
 		}
 	} else {
 		doubleCap := n + n

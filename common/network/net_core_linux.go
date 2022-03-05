@@ -155,7 +155,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 			poll := param.([]interface{})[0].(*Poll)
 			conn := param.([]interface{})[1].(*NetConn)
 
-			err := poll.tcpConnect(conn)
+			_, err := poll.tcpConnect(conn)
 			if err != nil {
 				if err != unix.EINPROGRESS {
 					poll.logger.LogError("tcp connect error, peerHost:%v, peerPort:%v, error : %s", conn.peerHost, conn.peerPort, err)
@@ -204,7 +204,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 }
 
 // implement network core TcpConnect
-func (netcore *NetPollCore) TcpConnect(host string, port int) error {
+func (netcore *NetPollCore) TcpConnect(host string, port int) (int64, error) {
 
 	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
@@ -213,7 +213,7 @@ func (netcore *NetPollCore) TcpConnect(host string, port int) error {
 	netcore.loadBalance.AllocConnection(conn.sessionId)
 
 	netcore.addWaitConn(conn)
-	return nil
+	return conn.GetSessionId(), nil
 }
 
 // implement network core TcpSend
