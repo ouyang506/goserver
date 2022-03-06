@@ -16,12 +16,23 @@ func (mgr *RpcManager) GetStubMgr() *RpcStubManger {
 }
 
 func (mgr *RpcManager) AddRpc(rpc *Rpc) bool {
+	rpcStub := mgr.rpcStubMgr.GetHashRouteStub(rpc.TargetSvrType, rpc.RouteKey)
+	if rpcStub == nil {
+		return false
+	}
+
+	ret := mgr.rpcStubMgr.TcpSend(rpcStub, rpc.Request)
+	if !ret {
+		return false
+	}
+
 	_, ok := mgr.rpcMap[rpc.SessionID]
 	if ok {
 		return false
 	}
 
 	mgr.rpcMap[rpc.SessionID] = rpc
+
 	return true
 }
 

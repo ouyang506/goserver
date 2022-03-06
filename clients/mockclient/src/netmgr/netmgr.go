@@ -22,10 +22,10 @@ func (mgr *NetMgr) Init(conf *config.Config) {
 	for i, gateInfo := range conf.Gates.GateInfos {
 		stubMgr := mgr.rpcMgr.GetStubMgr()
 		stubMgr.AddStub(&rpc.RpcStub{
-			ServerType: int(enums.ServerTypeGate),
-			InstID:     i,
-			RemoteIP:   gateInfo.IP,
-			RemotePort: int(gateInfo.Port),
+			ServerType:       int(enums.ServerTypeGate),
+			ServerTypeInstID: i,
+			RemoteIP:         gateInfo.IP,
+			RemotePort:       int(gateInfo.Port),
 		})
 	}
 }

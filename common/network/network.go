@@ -6,7 +6,7 @@ import (
 
 type NetworkCore interface {
 	TcpListen(host string, port int) error
-	TcpConnect(host string, port int) (int64, error)
+	TcpConnect(host string, port int) (Connection, error)
 	TcpSend(int64, []byte) error
 	TcpClose(int64) error
 }

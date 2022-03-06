@@ -204,7 +204,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 }
 
 // implement network core TcpConnect
-func (netcore *NetPollCore) TcpConnect(host string, port int) (int64, error) {
+func (netcore *NetPollCore) TcpConnect(host string, port int) (Connection, error) {
 
 	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
@@ -213,7 +213,7 @@ func (netcore *NetPollCore) TcpConnect(host string, port int) (int64, error) {
 	netcore.loadBalance.AllocConnection(conn.sessionId)
 
 	netcore.addWaitConn(conn)
-	return conn.GetSessionId(), nil
+	return conn, nil
 }
 
 // implement network core TcpSend

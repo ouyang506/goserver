@@ -10,10 +10,10 @@ func InitRpc(mgr *RpcManager) {
 }
 
 type Rpc struct {
-	SessionID     int64 // rpc请求唯一ID
-	ErrCode       int32 // rpc返回的错误码
-	TargetSvrType int   // 目标服务类型
-	RouteKey      int64 // 路由key
+	SessionID     int64  // rpc请求唯一ID
+	ErrCode       int32  // rpc返回的错误码
+	TargetSvrType int    // 目标服务类型
+	RouteKey      string // 路由key
 	Request       []byte
 	Response      []byte
 }
