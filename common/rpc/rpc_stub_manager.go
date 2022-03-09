@@ -9,7 +9,9 @@ import (
 )
 
 const (
-	NetConnAttrRpcStub = "RpcStub"
+	AttrRpcStub = "AttrRpcStub"
+
+	RpcQueueMax = 5000
 )
 
 // rpc网络代理
@@ -20,28 +22,46 @@ type RpcStub struct {
 	RemotePort int
 
 	pendingRpcQueue []*Rpc
-	pendingRpcMap   map[int64]*Rpc
-	netcore         network.NetworkCore
-	netconn         network.Connection
+
+	netcore network.NetworkCore
+	netconn network.Connection
 }
 
-func (stub *RpcStub) PushRpc(rpc *Rpc) {
-	if _, ok := stub.pendingRpcMap[rpc.SessionID]; ok {
-		return
+func (stub *RpcStub) PushRpc(rpc *Rpc) bool {
+
+	if len(stub.pendingRpcQueue) >= RpcQueueMax {
+		return false
 	}
-	stub.pendingRpcMap[rpc.SessionID] = rpc
 	stub.pendingRpcQueue = append(stub.pendingRpcQueue, rpc)
+	stub.TrySendRpc()
+	return true
 }
 
-func (stub *RpcStub) SendRpc() {
-	if stub.netconn == nil || stub.netconn.GetConnState() != network.ConnStateConnected {
+func (stub *RpcStub) TrySendRpc() {
+	if stub.netconn == nil {
 		//进行网络连接
-		netconn, err := stub.netcore.TcpConnect(stub.RemoteIP, stub.RemotePort, true)
+		atrrib := map[interface{}]interface{}{}
+		atrrib[AttrRpcStub] = stub
+		netconn, err := stub.netcore.TcpConnect(stub.RemoteIP, stub.RemotePort, true, atrrib)
 		if err != nil {
 			log.Error("stub try to connect error : %v, stub: %+v", err, stub)
 		} else {
-			netconn.SetAttrib(NetConnAttrRpcStub, stub)
 			stub.netconn = netconn
+		}
+		return
+	}
+	// 处于连接状态
+	if stub.netconn.GetConnState() == network.ConnStateConnected {
+		for {
+			if len(stub.pendingRpcQueue) <= 0 {
+				break
+			}
+			rpc := stub.pendingRpcQueue[0]
+			stub.pendingRpcQueue = stub.pendingRpcQueue[1:]
+			err := stub.netcore.TcpSend(rpc.SessionID, rpc.Request)
+			if err != nil {
+				break
+			}
 		}
 	}
 }
@@ -196,7 +216,14 @@ func (mgr *RpcStubManger) OnAccept(c network.Connection) {
 
 func (mgr *RpcStubManger) OnConnected(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
-	log.Debug("rpc stub manager OnConnected, peerHost:%v, peerPort:%v", peerHost, peerPort)
+	log.Debug("rpc stub manager OnConnected, peerHost:%v, peerPort:%v, sessionId: %v", peerHost, peerPort, c.GetSessionId())
+
+	stub, ok := c.GetAttrib(AttrRpcStub)
+	if !ok || stub == nil {
+		return
+	}
+
+	stub.(*RpcStub).TrySendRpc()
 }
 
 func (mgr *RpcStubManger) OnConnectFailed(c network.Connection) {

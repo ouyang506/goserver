@@ -6,7 +6,7 @@ import (
 
 type NetworkCore interface {
 	TcpListen(host string, port int) error
-	TcpConnect(host string, port int, autoReconnect bool) (Connection, error) //nonblock
+	TcpConnect(host string, port int, autoReconnect bool, attrib map[interface{}]interface{}) (Connection, error) //nonblock
 	TcpSend(sessionId int64, buff []byte) error
 	TcpClose(sessionId int64) error
 }
@@ -23,7 +23,7 @@ type NetEventHandler interface {
 	OnClosed(c Connection)
 }
 
-type DefaultNetEventHandler struct {	
+type DefaultNetEventHandler struct {
 }
 
 func NewDefaultNetEventHandler() NetEventHandler {
