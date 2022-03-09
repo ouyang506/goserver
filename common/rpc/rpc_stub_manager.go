@@ -3,8 +3,7 @@ package rpc
 import (
 	"common/log"
 	"common/network"
-	"common/utility/consistent"
-	"fmt"
+	"common/registry"
 	"strconv"
 	"strings"
 )
@@ -15,18 +14,85 @@ const (
 
 // rpc网络代理
 type RpcStub struct {
-	ServerType       int // key = ServerType + ServerTypeInstID
-	ServerTypeInstID int
-	RemoteIP         string
-	RemotePort       int
-	netconn          network.Connection
+	ServerType int
+	InstanceID int
+	RemoteIP   string
+	RemotePort int
+
+	pendingRpcQueue []*Rpc
+	pendingRpcMap   map[int64]*Rpc
+	netcore         network.NetworkCore
+	netconn         network.Connection
+}
+
+func (stub *RpcStub) PushRpc(rpc *Rpc) {
+	if _, ok := stub.pendingRpcMap[rpc.SessionID]; ok {
+		return
+	}
+	stub.pendingRpcMap[rpc.SessionID] = rpc
+	stub.pendingRpcQueue = append(stub.pendingRpcQueue, rpc)
+}
+
+func (stub *RpcStub) SendRpc() {
+	if stub.netconn == nil || stub.netconn.GetConnState() != network.ConnStateConnected {
+		//进行网络连接
+		netconn, err := stub.netcore.TcpConnect(stub.RemoteIP, stub.RemotePort, true)
+		if err != nil {
+			log.Error("stub try to connect error : %v, stub: %+v", err, stub)
+		} else {
+			netconn.SetAttrib(NetConnAttrRpcStub, stub)
+			stub.netconn = netconn
+		}
+	}
+}
+
+type RpcServerTypeStubs struct {
+	serverType int
+	stubs      []*RpcStub
+	router     RpcRouter
+}
+
+func (typeStubs *RpcServerTypeStubs) addStub(stub *RpcStub) bool {
+	index := 0
+	for i, v := range typeStubs.stubs {
+		if v.InstanceID == stub.InstanceID {
+			return false
+		}
+		if v.InstanceID > stub.InstanceID {
+			index = i
+			break
+		}
+	}
+	// 按照instanceID排序
+	typeStubs.stubs = append(typeStubs.stubs[:index], append([]*RpcStub{stub}, typeStubs.stubs[index:]...)...)
+	typeStubs.router.UpdateRoute(strconv.Itoa(stub.InstanceID), stub)
+	return true
+}
+
+func (typeStubs *RpcServerTypeStubs) delStub(instanceID int) bool {
+	for i, v := range typeStubs.stubs {
+		if v.InstanceID == instanceID {
+			typeStubs.stubs = append(typeStubs.stubs[:i], typeStubs.stubs[i+1:]...)
+			typeStubs.router.DelRoute(strconv.Itoa(instanceID))
+			return true
+		}
+	}
+	return false
+}
+
+func (typeStubs *RpcServerTypeStubs) getStub(instanceID int) *RpcStub {
+	for _, v := range typeStubs.stubs {
+		if v.InstanceID == instanceID {
+			return v
+		}
+	}
+	return nil
 }
 
 type RpcStubManger struct {
-	netcore         network.NetworkCore
-	serverTypeStubs map[int][]*RpcStub
-
-	consisRouterMap map[int]*consistent.Consistent // rpc一致性路由容器
+	netcore     network.NetworkCore
+	typeStubMap map[int]*RpcServerTypeStubs
+	registry    *registry.RegistryMgr
 }
 
 func NewRpcStubManager() *RpcStubManger {
@@ -40,92 +106,86 @@ func NewRpcStubManager() *RpcStubManger {
 		network.WithSocketTcpNoDelay(true),
 		network.WithFrameCodec(network.NewVariableFrameLenCodec()))
 
-	mgr.serverTypeStubs = map[int][]*RpcStub{}
-	mgr.consisRouterMap = map[int]*consistent.Consistent{}
+	mgr.typeStubMap = map[int]*RpcServerTypeStubs{}
+
+	etcdReg := registry.NewEtcdRegistry(log.GetLogger(), []string{"127.0.0.1:2379"}, "", "")
+	mgr.registry = registry.NewRegistryMgr(log.GetLogger(), etcdReg, mgr.registryCB)
+	mgr.registry.DoRegister("1", "1", 10)
 
 	return mgr
 }
 
-func (mgr *RpcStubManger) AddStub(stub *RpcStub) {
-	typeStubs, ok := mgr.serverTypeStubs[stub.ServerType]
-	if !ok {
-		mgr.serverTypeStubs[stub.ServerType] = []*RpcStub{stub}
-	} else {
-		// 无法添加相同的stub
-		for _, stubTmp := range typeStubs {
-			if stubTmp.ServerType == stub.ServerType && stubTmp.ServerTypeInstID == stub.ServerTypeInstID {
-				return
-			}
-		}
-		mgr.serverTypeStubs[stub.ServerType] = append(typeStubs, stub)
+func (mgr *RpcStubManger) registryCB(oper registry.OperType, key string, value string) {
+	serverType := 0
+	instanceID := 0
+	splitKeyArr := strings.SplitN(key, ":", 2)
+	if len(splitKeyArr) >= 2 {
+		serverType, _ = strconv.Atoi(splitKeyArr[0])
+		instanceID, _ = strconv.Atoi(splitKeyArr[1])
 	}
 
-	// 进行网络连接
-	netconn, err := mgr.netcore.TcpConnect(stub.RemoteIP, stub.RemotePort)
-	if err != nil {
-		log.Error("add stub try to connect error : %v, stub: %+v", err, stub)
-	} else {
-		netconn.SetAttrib(NetConnAttrRpcStub, stub)
-		stub.netconn = netconn
+	switch oper {
+	case registry.OperUpdate:
+		{
+			ip := ""
+			port := 0
+			splitValueArr := strings.SplitN(value, ":", 2)
+			if len(splitValueArr) >= 2 {
+				ip = splitKeyArr[0]
+				port, _ = strconv.Atoi(splitKeyArr[1])
+			}
+			stub := &RpcStub{
+				ServerType: serverType,
+				InstanceID: instanceID,
+				RemoteIP:   ip,
+				RemotePort: port,
+			}
+			mgr.AddStub(stub)
+		}
+	case registry.OperDelete:
+		{
+			mgr.DelStub(serverType, instanceID)
+		}
 	}
 }
 
-func (mgr *RpcStubManger) DelStub(stub *RpcStub) bool {
-	typeStubs, ok := mgr.serverTypeStubs[stub.ServerType]
-	if ok {
-		for i, stubTmp := range typeStubs {
-			if stubTmp.ServerType == stub.ServerType && stubTmp.ServerTypeInstID == stub.ServerTypeInstID {
-				mgr.serverTypeStubs[stub.ServerType] = append(typeStubs[:i], typeStubs[i+1:]...)
-				return true
-			}
+func (mgr *RpcStubManger) AddStub(stub *RpcStub) bool {
+	serverTypeStubs, ok := mgr.typeStubMap[stub.ServerType]
+	if !ok {
+		serverTypeStubs = &RpcServerTypeStubs{
+			serverType: stub.ServerType,
+			router:     newConsistRouter(),
 		}
+		mgr.typeStubMap[stub.ServerType] = serverTypeStubs
+	}
+
+	return serverTypeStubs.addStub(stub)
+
+}
+
+func (mgr *RpcStubManger) DelStub(serverType int, instanceId int) bool {
+	typeStubs, ok := mgr.typeStubMap[serverType]
+	if ok {
+		return typeStubs.delStub(instanceId)
 	}
 	return false
 }
 
-func (mgr *RpcStubManger) GetStub(serverType int, serverTypeInstID int) *RpcStub {
-	typeStubs, ok := mgr.serverTypeStubs[serverType]
-	if !ok {
-		return nil
-	}
-	if len(typeStubs) <= 0 {
-		return nil
-	}
-
-	for _, stub := range typeStubs {
-		if stub.ServerType == serverType && stub.ServerTypeInstID == serverTypeInstID {
-			return stub
-		}
-	}
-	return nil
-}
-
-func (mgr *RpcStubManger) GetHashRouteStub(serverType int, hashKey string) *RpcStub {
-	router, ok := mgr.consisRouterMap[serverType]
+func (mgr *RpcStubManger) FindStub(rpc *Rpc) *RpcStub {
+	typeStubs, ok := mgr.typeStubMap[rpc.TargetSvrType]
 	if !ok {
 		return nil
 	}
 
-	routeKey := router.Get(hashKey)
-	if routeKey == "" {
+	memberName := typeStubs.router.SelectServer(rpc.RouteKey).(string)
+	if memberName == "" {
 		return nil
 	}
 
-	splitArr := strings.SplitN(routeKey, ":", 2)
-	if len(splitArr) == 2 {
-		serverType, _ := strconv.Atoi(splitArr[0])
-		serverTypeInstID, _ := strconv.Atoi(splitArr[0])
-		return mgr.GetStub(serverType, serverTypeInstID)
-	}
-	return nil
-}
+	instanceID, _ := strconv.Atoi(memberName)
+	stub := typeStubs.getStub(instanceID)
 
-func (mgr *RpcStubManger) TcpSend(stub *RpcStub, request []byte) bool {
-	if stub.netconn.GetConnState() != network.ConnStateConnected {
-		return false
-	}
-	mgr.netcore.TcpSend(stub.netconn.GetSessionId(), request)
-	return true
+	return stub
 }
 
 // 网络事件回调
@@ -137,31 +197,15 @@ func (mgr *RpcStubManger) OnAccept(c network.Connection) {
 func (mgr *RpcStubManger) OnConnected(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
 	log.Debug("rpc stub manager OnConnected, peerHost:%v, peerPort:%v", peerHost, peerPort)
+}
 
-	attrValue, ok := c.GetAttrib(NetConnAttrRpcStub)
-	if ok && attrValue != nil {
-		stub := attrValue.(*RpcStub)
-		router, ok := mgr.consisRouterMap[stub.ServerType]
-		if !ok {
-			router = consistent.NewConsistent()
-			mgr.consisRouterMap[stub.ServerType] = router
-		}
-
-		key := fmt.Sprintf("%d:%d", stub.ServerType, stub.ServerTypeInstID)
-		router.Add(key)
-	}
+func (mgr *RpcStubManger) OnConnectFailed(c network.Connection) {
+	peerHost, peerPort := c.GetPeerAddr()
+	log.Debug("rpc stub manager OnConnectFailed, peerHost:%v, peerPort:%v", peerHost, peerPort)
 }
 
 func (mgr *RpcStubManger) OnClosed(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
 	log.Debug("rpc stub manager OnClosed, peerHost:%v, peerPort:%v", peerHost, peerPort)
-	attrValue, ok := c.GetAttrib(NetConnAttrRpcStub)
-	if ok && attrValue != nil {
-		stub := attrValue.(*RpcStub)
-		router, ok := mgr.consisRouterMap[stub.ServerType]
-		if ok && router != nil {
-			key := fmt.Sprintf("%d:%d", stub.ServerType, stub.ServerTypeInstID)
-			router.Remove(key)
-		}
-	}
+
 }

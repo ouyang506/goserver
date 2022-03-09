@@ -62,6 +62,10 @@ func (c *Consistent) Members() []string {
 }
 
 func (c *Consistent) add(member string) {
+	if _, ok := c.members[member]; ok {
+		return
+	}
+
 	for i := uint32(0); i < c.numberOfReplicas; i++ {
 		replKey := c.replMemberKey(member, i)
 		c.circle[c.hash(replKey)] = member
@@ -71,6 +75,10 @@ func (c *Consistent) add(member string) {
 }
 
 func (c *Consistent) remove(member string) {
+	if _, ok := c.members[member]; !ok {
+		return
+	}
+
 	for i := uint32(0); i < c.numberOfReplicas; i++ {
 		replKey := c.replMemberKey(member, i)
 		delete(c.circle, c.hash(replKey))

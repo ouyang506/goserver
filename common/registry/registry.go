@@ -33,7 +33,7 @@ const (
 	OperDelete OperType = 2
 )
 
-type HandleServiceCb func(OperType, string, string)
+type HandleServiceCb func(oper OperType, key string, value string)
 
 type RegistryMgr struct {
 	logger   log.Logger
