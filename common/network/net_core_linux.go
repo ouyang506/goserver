@@ -777,6 +777,7 @@ func (poll *Poll) loopError(fd int) {
 	if conn != nil && conn.state == int32(ConnStateConnecting) {
 		poll.logger.LogError("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
+		poll.eventHandler.OnConnectFailed(conn)
 	}
 
 	poll.close(fd)

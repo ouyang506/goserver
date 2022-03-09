@@ -17,9 +17,10 @@ func NewNetworkCore(options ...Option) NetworkCore {
 
 /// net connection event handler
 type NetEventHandler interface {
-	OnAccept(Connection)
-	OnConnected(Connection)
-	OnClosed(Connection)
+	OnAccept(c Connection)
+	OnConnected(c Connection)
+	OnConnectFailed(c Connection)
+	OnClosed(c Connection)
 }
 
 type DefaultNetEventHandler struct {	
@@ -35,6 +36,10 @@ func (h *DefaultNetEventHandler) OnAccept(c Connection) {
 
 func (h *DefaultNetEventHandler) OnConnected(c Connection) {
 	log.Debug("DefaultNetEventHandler OnConnected, connection info : %+v", c)
+}
+
+func (h *DefaultNetEventHandler) OnConnectFailed(c Connection) {
+	log.Debug("DefaultNetEventHandler OnConnectFailed, connection info : %+v", c)
 }
 
 func (h *DefaultNetEventHandler) OnClosed(c Connection) {

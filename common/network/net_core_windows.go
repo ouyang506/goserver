@@ -93,6 +93,8 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		tcpConn, err := dialer.Dial("tcp", endpoint)
 		if err != nil {
 			netcore.logger.LogError("dial tcp error: %v, endpoint: %v", err, endpoint)
+			netcore.eventHandler.OnConnectFailed(conn)
+			
 			if conn.autoReconnect{
 				conn.lastTryConTime = t.Unix()
 			}else{

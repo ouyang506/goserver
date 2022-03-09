@@ -132,6 +132,11 @@ func (h *CommNetEventHandler) OnConnected(c network.Connection) {
 	connMap.Store(c.GetSessionId(), c)
 }
 
+func (h *CommNetEventHandler) OnConnectFailed(c network.Connection) {
+	peerHost, peerPort := c.GetPeerAddr()
+	h.logger.LogDebug("NetEventHandler OnConnectFailed, peerHost:%v, peerPort:%v", peerHost, peerPort)
+}
+
 func (h *CommNetEventHandler) OnClosed(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
 	h.logger.LogDebug("NetEventHandler OnClosed, peerHost:%v, peerPort:%v", peerHost, peerPort)
