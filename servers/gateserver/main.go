@@ -52,7 +52,7 @@ func main() {
 }
 
 func startClient(net network.NetworkCore, peerHost string, peerPort int) {
-	net.TcpConnect(peerHost, peerPort)
+	net.TcpConnect(peerHost, peerPort, true)
 }
 
 func update() {

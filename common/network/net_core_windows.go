@@ -93,7 +93,11 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		tcpConn, err := dialer.Dial("tcp", endpoint)
 		if err != nil {
 			netcore.logger.LogError("dial tcp error: %v, endpoint: %v", err, endpoint)
-			conn.lastTryConTime = t.Unix()
+			if conn.autoReconnect{
+				conn.lastTryConTime = t.Unix()
+			}else{
+				netcore.waitConnMap.Delete(conn.sessionId)
+			}			
 			return true
 		}
 		conn.tcpConn = tcpConn.(*net.TCPConn)
@@ -281,7 +285,7 @@ func (netcore *NetPollCore) close(conn *NetConn) error {
 		netcore.connMap.Delete(conn.sessionId)
 		netcore.eventHandler.OnClosed(conn)
 
-		if conn.isClient {
+		if conn.isClient && conn.autoReconnect{
 			netcore.waitConnMap.Store(conn.sessionId, conn)
 		}
 	}
@@ -312,9 +316,10 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 	return nil
 }
 
-func (netcore *NetPollCore) TcpConnect(host string, port int) (Connection, error) {
+func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool) (Connection, error) {
 	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
+	conn.autoReconnect = autoReconnect
 	conn.peerHost = host
 	conn.peerPort = port
 	netcore.waitConnMap.Store(conn.sessionId, conn)

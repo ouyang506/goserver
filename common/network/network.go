@@ -6,9 +6,9 @@ import (
 
 type NetworkCore interface {
 	TcpListen(host string, port int) error
-	TcpConnect(host string, port int) (Connection, error)
-	TcpSend(int64, []byte) error
-	TcpClose(int64) error
+	TcpConnect(host string, port int, autoReconnect bool) (Connection, error) //nonblock
+	TcpSend(sessionId int64, buff []byte) error
+	TcpClose(sessionId int64) error
 }
 
 func NewNetworkCore(options ...Option) NetworkCore {
@@ -22,24 +22,21 @@ type NetEventHandler interface {
 	OnClosed(Connection)
 }
 
-type DefaultNetEventHandler struct {
-	logger log.Logger
+type DefaultNetEventHandler struct {	
 }
 
-func NewDefaultNetEventHandler(logger log.Logger) NetEventHandler {
-	return &DefaultNetEventHandler{
-		logger: logger,
-	}
+func NewDefaultNetEventHandler() NetEventHandler {
+	return &DefaultNetEventHandler{}
 }
 
 func (h *DefaultNetEventHandler) OnAccept(c Connection) {
-	h.logger.LogDebug("DefaultNetEventHandler OnAccept, connection info: %+v", c)
+	log.Debug("DefaultNetEventHandler OnAccept, connection info: %+v", c)
 }
 
 func (h *DefaultNetEventHandler) OnConnected(c Connection) {
-	h.logger.LogDebug("DefaultNetEventHandler OnConnected, connection info : %+v", c)
+	log.Debug("DefaultNetEventHandler OnConnected, connection info : %+v", c)
 }
 
 func (h *DefaultNetEventHandler) OnClosed(c Connection) {
-	h.logger.LogDebug("DefaultNetEventHandler OnClosed, connection info : %+v", c)
+	log.Debug("DefaultNetEventHandler OnClosed, connection info : %+v", c)
 }

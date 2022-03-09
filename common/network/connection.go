@@ -46,6 +46,7 @@ type BaseConn struct {
 	state    int32
 
 	isClient       bool
+	autoReconnect  bool
 	lastTryConTime int64
 
 	attrMap sync.Map
