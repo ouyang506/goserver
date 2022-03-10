@@ -3,7 +3,7 @@ package network
 type Option func(ops *Options)
 
 type Options struct {
-	numLoops             int
+	numLoops             int // only for linux
 	loadBalance          LoadBalance
 	eventHandler         NetEventHandler
 	socketSendBufferSize int
@@ -17,6 +17,15 @@ func loadOptions(op []Option) *Options {
 	for _, f := range op {
 		f(ops)
 	}
+
+	if ops.socketSendBufferSize <= 0 {
+		ops.socketSendBufferSize = 4096
+	}
+
+	if ops.socketRcvBufferSize <= 0 {
+		ops.socketRcvBufferSize = 4096
+	}
+
 	return ops
 }
 

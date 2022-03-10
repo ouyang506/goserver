@@ -68,6 +68,14 @@ func (stub *RpcStub) TrySendRpc() {
 	}
 }
 
+func (stub *RpcStub) Close() {
+	netconn := stub.netconn.Load()
+	if netconn != nil {
+		connnSessionId := netconn.(network.Connection).GetSessionId()
+		stub.netcore.TcpClose(connnSessionId)
+	}
+}
+
 type RpcServerTypeStubs struct {
 	serverType int
 	stubs      []*RpcStub

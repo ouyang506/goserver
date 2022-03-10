@@ -21,7 +21,7 @@ type NetConn struct {
 	sendBuff  *ringbuffer.RingBuffer
 	rcvBuff   *ringbuffer.RingBuffer
 
-	foceClose int32
+	foceClose int32 // atomic
 	tcpConn   *net.TCPConn
 }
 
@@ -41,16 +41,19 @@ type NetPollCore struct {
 	ctx         context.Context
 	ctxCancelFn context.CancelFunc
 
+	listener net.TCPListener
+
 	eventHandler         NetEventHandler
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
 	codec                Codec
 
-	listener      net.TCPListener
-	connMap       sync.Map // sessionId->connection
-	waitConnMap   sync.Map // sessionId->connection
 	waitConnTimer time.Ticker
+
+	connMapMutex sync.RWMutex
+	waitConnMap  map[int64]*NetConn // 待发起的连接(client)
+	connectedMap map[int64]*NetConn // 已建立的连接
 }
 
 func newNetworkCore(opts ...Option) *NetPollCore {
@@ -62,8 +65,8 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.socketTcpNoDelay = options.socketTcpNoDelay
 	netcore.codec = options.codec
-	netcore.connMap = sync.Map{}
-	netcore.waitConnMap = sync.Map{}
+	netcore.connectedMap = map[int64]*NetConn{}
+	netcore.waitConnMap = map[int64]*NetConn{}
 	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)
 
 	return netcore
@@ -104,14 +107,24 @@ func (netcore *NetPollCore) startWaitConnTimer() {
 }
 
 func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
-	netcore.waitConnMap.Range(func(key, value interface{}) bool {
-		conn := value.(*NetConn)
-		if t.Unix()-conn.lastTryConTime < int64(RECONNECT_DELTA_TIME_SEC) {
-			return true
+	waitConnList := netcore.getWaitConnList()
+	if len(waitConnList) <= 0 {
+		return
+	}
+
+	for _, conn := range waitConnList {
+		// 已经强制关闭的不再请求连接
+		if atomic.LoadInt32(&conn.foceClose) > 0 {
+			continue
 		}
 
+		if t.Unix()-conn.lastTryConTime < int64(RECONNECT_DELTA_TIME_SEC) {
+			continue
+		}
+
+		// 上一连接的事件loop未结束
 		if conn.GetConnState() != ConnStateInit {
-			return true
+			continue
 		}
 
 		endpoint := fmt.Sprintf("%s:%d", conn.peerHost, conn.peerPort)
@@ -124,10 +137,17 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 			if conn.autoReconnect {
 				conn.lastTryConTime = t.Unix()
 			} else {
-				netcore.waitConnMap.Delete(conn.sessionId)
+				netcore.removeWaitingConn(conn.sessionId)
 			}
-			return true
+			return
 		}
+
+		if !netcore.moveConnToConnected(conn.sessionId) {
+			log.Info("net connected but connection is force closed, sessionId: %v, peerHost: %v, peerPort: %v",
+				conn.sessionId, conn.peerHost, conn.peerPort)
+			return
+		}
+
 		conn.tcpConn = tcpConn.(*net.TCPConn)
 		conn.tcpConn.SetWriteBuffer(netcore.socketSendBufferSize)
 		conn.tcpConn.SetReadBuffer(netcore.socketRcvBufferSize)
@@ -136,13 +156,10 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		conn.SetConnState(ConnStateConnected)
 		conn.lastTryConTime = 0
 
-		netcore.waitConnMap.Delete(conn.sessionId)
-		netcore.connMap.Store(conn.sessionId, conn)
 		netcore.eventHandler.OnConnect(conn, nil)
 
 		netcore.loopEvent(conn)
-		return true
-	})
+	}
 }
 
 func (netcore *NetPollCore) loopAccept() {
@@ -166,7 +183,7 @@ func (netcore *NetPollCore) loopAccept() {
 			conn.peerPort, _ = strconv.Atoi(addrSplits[1])
 		}
 
-		netcore.connMap.Store(conn.sessionId, conn)
+		netcore.addConnectedConn(conn.sessionId, conn)
 		netcore.eventHandler.OnAccept(conn)
 
 		netcore.loopEvent(conn)
@@ -202,7 +219,7 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 				break
 			}
 
-			tcpConn.SetReadDeadline(time.Now().Add(time.Duration(100) + time.Second))
+			tcpConn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 			n, err := tcpConn.Read(buff)
 			if err != nil || n <= 0 {
 				if !errors.Is(err, os.ErrDeadlineExceeded) {
@@ -281,7 +298,7 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 				if len(b) <= 0 {
 					break
 				}
-				conn.tcpConn.SetWriteDeadline(time.Now().Add(time.Duration(100) + time.Second))
+				conn.tcpConn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
 				n, err := conn.tcpConn.Write(b)
 				if err != nil || n <= 0 {
 					if !errors.Is(err, os.ErrDeadlineExceeded) {
@@ -317,15 +334,131 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 func (netcore *NetPollCore) close(conn *NetConn) error {
 	if conn.CompareAndSwapConnState(ConnStateConnected, ConnStateClosed) {
 		conn.tcpConn.Close()
-		netcore.connMap.Delete(conn.sessionId)
 		netcore.eventHandler.OnClosed(conn)
 
-		if conn.isClient && conn.autoReconnect {
-			netcore.waitConnMap.Store(conn.sessionId, conn)
+		if !conn.isClient {
+			netcore.removeConnectedConn(conn.sessionId)
+		} else {
+			if conn.autoReconnect {
+				netcore.moveConnToWaiting(conn.sessionId)
+			}
 		}
 	}
 
 	return nil
+}
+
+// 获取待连接列表的拷贝
+func (netcore *NetPollCore) getWaitConnList() []*NetConn {
+	netcore.connMapMutex.RLock()
+	defer netcore.connMapMutex.RUnlock()
+	values := make([]*NetConn, 0, len(netcore.waitConnMap))
+	for _, v := range netcore.waitConnMap {
+		values = append(values, v)
+	}
+	return values
+}
+
+// 从待连接列表移动到已连接列表
+func (netcore *NetPollCore) moveConnToConnected(sessionId int64) bool {
+	netcore.connMapMutex.Lock()
+	defer netcore.connMapMutex.Unlock()
+	conn, ok := netcore.waitConnMap[sessionId]
+	if !ok {
+		return false
+	}
+	netcore.connectedMap[sessionId] = conn
+	return true
+}
+
+// 从已连接列表移动到待连接列表
+func (netcore *NetPollCore) moveConnToWaiting(sessionId int64) bool {
+	netcore.connMapMutex.Lock()
+	defer netcore.connMapMutex.Unlock()
+	conn, ok := netcore.connectedMap[sessionId]
+	if !ok {
+		return false
+	}
+	netcore.waitConnMap[sessionId] = conn
+	return true
+}
+
+// 添加到待连接列表
+func (netcore *NetPollCore) addWaitingConn(sessionId int64, conn *NetConn) bool {
+	netcore.connMapMutex.Lock()
+	defer netcore.connMapMutex.Unlock()
+	_, ok := netcore.waitConnMap[sessionId]
+	if !ok {
+		return false
+	}
+	netcore.waitConnMap[sessionId] = conn
+	return true
+}
+
+// 从待连接列表移除
+func (netcore *NetPollCore) removeWaitingConn(sessionId int64) bool {
+	netcore.connMapMutex.Lock()
+	defer netcore.connMapMutex.Unlock()
+	_, ok := netcore.waitConnMap[sessionId]
+	if !ok {
+		return false
+	}
+	delete(netcore.waitConnMap, sessionId)
+	return true
+}
+
+// 从已连接列表查找
+func (netcore *NetPollCore) getConnectedConn(sessionId int64) *NetConn {
+	netcore.connMapMutex.RLock()
+	defer netcore.connMapMutex.RUnlock()
+	conn, ok := netcore.connectedMap[sessionId]
+	if !ok {
+		return nil
+	}
+	return conn
+}
+
+// 添加到已连接列表
+func (netcore *NetPollCore) addConnectedConn(sessionId int64, conn *NetConn) bool {
+	netcore.connMapMutex.Lock()
+	defer netcore.connMapMutex.Unlock()
+	_, ok := netcore.connectedMap[sessionId]
+	if !ok {
+		return false
+	}
+	netcore.connectedMap[sessionId] = conn
+	return true
+}
+
+// 从已连接列表移除
+func (netcore *NetPollCore) removeConnectedConn(sessionId int64) bool {
+	netcore.connMapMutex.Lock()
+	defer netcore.connMapMutex.Unlock()
+	_, ok := netcore.connectedMap[sessionId]
+	if !ok {
+		return false
+	}
+	delete(netcore.connectedMap, sessionId)
+	return true
+}
+
+// 从待连接列表和已连接列表移除
+func (netcore *NetPollCore) forceRemoveConn(sessionId int64) bool {
+	netcore.connMapMutex.Lock()
+	defer netcore.connMapMutex.Unlock()
+
+	conn, ok := netcore.connectedMap[sessionId]
+	if ok {
+		atomic.StoreInt32(&conn.foceClose, 1)
+	}
+	delete(netcore.connectedMap, sessionId)
+
+	conn, ok = netcore.waitConnMap[sessionId]
+	if ok {
+		atomic.StoreInt32(&conn.foceClose, 1)
+	}
+	delete(netcore.waitConnMap, sessionId)
+	return true
 }
 
 func (netcore *NetPollCore) TcpListen(host string, port int) error {
@@ -357,12 +490,12 @@ func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool
 	conn.autoReconnect = autoReconnect
 	conn.peerHost = host
 	conn.peerPort = port
-	if attrib != nil {
-		for k, v := range attrib {
-			conn.SetAttrib(k, v)
-		}
+
+	for k, v := range attrib {
+		conn.SetAttrib(k, v)
 	}
-	netcore.waitConnMap.Store(conn.sessionId, conn)
+
+	netcore.addWaitingConn(conn.sessionId, conn)
 	return conn, nil
 }
 
@@ -371,12 +504,12 @@ func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 		return nil
 	}
 
-	c, ok := netcore.connMap.Load(sessionId)
-	if !ok {
+	conn := netcore.getConnectedConn(sessionId)
+	if conn == nil {
 		log.Error("tcp send connection not found, sessionId:%v", sessionId)
 		return errors.New("tcp send connection not found")
 	}
-	conn := c.(*NetConn)
+
 	select {
 	case conn.sendChann <- buff:
 	default:
@@ -388,15 +521,6 @@ func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 }
 
 func (netcore *NetPollCore) TcpClose(sessionId int64) error {
-	c, ok := netcore.connMap.Load(sessionId)
-	if !ok {
-		log.Error("tcp close connection not found, sessionId:%v", sessionId)
-		return errors.New("tcp close connection not found")
-	}
-	conn := c.(*NetConn)
-	swapped := atomic.CompareAndSwapInt32(&conn.foceClose, 0, 1)
-	if !swapped {
-		log.Info("tcp close connection, the connection is closing yet")
-	}
+	netcore.forceRemoveConn(sessionId)
 	return nil
 }
