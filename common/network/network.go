@@ -1,10 +1,9 @@
 package network
 
-import (
-	"common/log"
-)
-
 type NetworkCore interface {
+	Start()
+	Stop()
+
 	TcpListen(host string, port int) error
 	TcpConnect(host string, port int, autoReconnect bool, attrib map[interface{}]interface{}) (Connection, error) //nonblock
 	TcpSend(sessionId int64, buff []byte) error
@@ -18,30 +17,6 @@ func NewNetworkCore(options ...Option) NetworkCore {
 /// net connection event handler
 type NetEventHandler interface {
 	OnAccept(c Connection)
-	OnConnected(c Connection)
-	OnConnectFailed(c Connection)
+	OnConnect(c Connection, err error)
 	OnClosed(c Connection)
-}
-
-type DefaultNetEventHandler struct {
-}
-
-func NewDefaultNetEventHandler() NetEventHandler {
-	return &DefaultNetEventHandler{}
-}
-
-func (h *DefaultNetEventHandler) OnAccept(c Connection) {
-	log.Debug("DefaultNetEventHandler OnAccept, connection info: %+v", c)
-}
-
-func (h *DefaultNetEventHandler) OnConnected(c Connection) {
-	log.Debug("DefaultNetEventHandler OnConnected, connection info : %+v", c)
-}
-
-func (h *DefaultNetEventHandler) OnConnectFailed(c Connection) {
-	log.Debug("DefaultNetEventHandler OnConnectFailed, connection info : %+v", c)
-}
-
-func (h *DefaultNetEventHandler) OnClosed(c Connection) {
-	log.Debug("DefaultNetEventHandler OnClosed, connection info : %+v", c)
 }

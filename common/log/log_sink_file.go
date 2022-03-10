@@ -6,31 +6,46 @@ import (
 	"time"
 )
 
+type RotateType int
+
+const (
+	RotateByDay RotateType = iota
+	RotateByHour
+)
+
 type FileLogSink struct {
 	logDir      string
+	rotateType  RotateType
 	curFile     *os.File
 	curFileName string
 }
 
-func NewFileLogSink(logDir string) *FileLogSink {
+func NewFileLogSink(logDir string, rotateType RotateType) *FileLogSink {
 	if logDir == "" {
 		logDir = "./log/"
 	}
-
 	_, err := os.Stat(logDir)
 	if os.IsNotExist(err) {
 		os.Mkdir(logDir, os.FileMode(0770))
 	}
 
 	sink := &FileLogSink{
-		logDir: logDir,
+		logDir:     logDir,
+		rotateType: rotateType,
 	}
 	return sink
 }
 func (sink *FileLogSink) getFileName(t time.Time) string {
-	return t.Format("2006_01_02") + ".log"
+	switch sink.rotateType {
+	case RotateByDay:
+		return t.Format("2006_01_02") + ".log"
+	case RotateByHour:
+		return t.Format("2006_01_02_15") + ".log"
+	default:
+		return t.Format("2006_01_02") + ".log"
+	}
 }
-func (sink *FileLogSink) getFile(fileName string) (*os.File, error) {
+func (sink *FileLogSink) openFile(fileName string) (*os.File, error) {
 	f, err := os.OpenFile(sink.logDir+fileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, os.FileMode(0660))
 	return f, err
 }
@@ -43,7 +58,7 @@ func (sink *FileLogSink) Sink(content *LogContent) {
 			sink.curFile.Close()
 		}
 		sink.curFileName = fileName
-		sink.curFile, _ = sink.getFile(fileName)
+		sink.curFile, _ = sink.openFile(fileName)
 	}
 
 	if sink.curFile == nil {

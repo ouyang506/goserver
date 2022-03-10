@@ -1,11 +1,8 @@
 package network
 
-import "common/log"
-
 type Option func(ops *Options)
 
 type Options struct {
-	logger               log.Logger
 	numLoops             int
 	loadBalance          LoadBalance
 	eventHandler         NetEventHandler
@@ -21,12 +18,6 @@ func loadOptions(op []Option) *Options {
 		f(ops)
 	}
 	return ops
-}
-
-func WithLogger(logger log.Logger) Option {
-	return func(ops *Options) {
-		ops.logger = logger
-	}
 }
 
 func WithNumLoop(numberLoops int) Option {

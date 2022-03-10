@@ -6,6 +6,7 @@ import (
 	"common/registry"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 const (
@@ -23,8 +24,9 @@ type RpcStub struct {
 
 	pendingRpcQueue []*Rpc
 
-	netcore network.NetworkCore
-	netconn network.Connection
+	netcore       network.NetworkCore
+	netconn       atomic.Value //network.Connection
+	netconnInited int32
 }
 
 func (stub *RpcStub) PushRpc(rpc *Rpc) bool {
@@ -38,20 +40,20 @@ func (stub *RpcStub) PushRpc(rpc *Rpc) bool {
 }
 
 func (stub *RpcStub) TrySendRpc() {
-	if stub.netconn == nil {
-		//进行网络连接
+	//初始化netconn进行网络连接
+	if atomic.CompareAndSwapInt32(&stub.netconnInited, 0, 1) {
 		atrrib := map[interface{}]interface{}{}
 		atrrib[AttrRpcStub] = stub
 		netconn, err := stub.netcore.TcpConnect(stub.RemoteIP, stub.RemotePort, true, atrrib)
 		if err != nil {
 			log.Error("stub try to connect error : %v, stub: %+v", err, stub)
-		} else {
-			stub.netconn = netconn
 		}
-		return
+		stub.netconn.Store(netconn)
 	}
-	// 处于连接状态
-	if stub.netconn.GetConnState() == network.ConnStateConnected {
+
+	// netconn处于连接状态
+	netconn := stub.netconn.Load()
+	if netconn != nil && netconn.(network.Connection).GetConnState() == network.ConnStateConnected {
 		for {
 			if len(stub.pendingRpcQueue) <= 0 {
 				break
@@ -86,6 +88,8 @@ func (typeStubs *RpcServerTypeStubs) addStub(stub *RpcStub) bool {
 	// 按照instanceID排序
 	typeStubs.stubs = append(typeStubs.stubs[:index], append([]*RpcStub{stub}, typeStubs.stubs[index:]...)...)
 	typeStubs.router.UpdateRoute(strconv.Itoa(stub.InstanceID), stub)
+
+	log.Debug("add rpc stub [%v:%v][%v:%v]", stub.ServerType, stub.InstanceID, stub.RemoteIP, stub.RemotePort)
 	return true
 }
 
@@ -94,20 +98,22 @@ func (typeStubs *RpcServerTypeStubs) delStub(instanceID int) bool {
 		if v.InstanceID == instanceID {
 			typeStubs.stubs = append(typeStubs.stubs[:i], typeStubs.stubs[i+1:]...)
 			typeStubs.router.DelRoute(strconv.Itoa(instanceID))
+
+			log.Debug("delete rpc stub [%v:%v][%v:%v]", v.ServerType, v.InstanceID, v.RemoteIP, v.RemotePort)
 			return true
 		}
 	}
 	return false
 }
 
-func (typeStubs *RpcServerTypeStubs) getStub(instanceID int) *RpcStub {
-	for _, v := range typeStubs.stubs {
-		if v.InstanceID == instanceID {
-			return v
-		}
-	}
-	return nil
-}
+// func (typeStubs *RpcServerTypeStubs) getStub(instanceID int) *RpcStub {
+// 	for _, v := range typeStubs.stubs {
+// 		if v.InstanceID == instanceID {
+// 			return v
+// 		}
+// 	}
+// 	return nil
+// }
 
 type RpcStubManger struct {
 	netcore     network.NetworkCore
@@ -118,19 +124,19 @@ type RpcStubManger struct {
 func NewRpcStubManager() *RpcStubManger {
 	mgr := &RpcStubManger{}
 
-	mgr.netcore = network.NewNetworkCore(network.WithLogger(log.GetLogger()),
+	mgr.netcore = network.NewNetworkCore(
 		network.WithEventHandler(mgr),
 		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
 		network.WithSocketSendBufferSize(10240),
 		network.WithSocketRcvBufferSize(10240),
 		network.WithSocketTcpNoDelay(true),
 		network.WithFrameCodec(network.NewVariableFrameLenCodec()))
+	mgr.netcore.Start()
 
 	mgr.typeStubMap = map[int]*RpcServerTypeStubs{}
 
 	etcdReg := registry.NewEtcdRegistry(log.GetLogger(), []string{"127.0.0.1:2379"}, "", "")
 	mgr.registry = registry.NewRegistryMgr(log.GetLogger(), etcdReg, mgr.registryCB)
-	mgr.registry.DoRegister("1", "1", 10)
 
 	return mgr
 }
@@ -154,13 +160,10 @@ func (mgr *RpcStubManger) registryCB(oper registry.OperType, key string, value s
 				ip = splitKeyArr[0]
 				port, _ = strconv.Atoi(splitKeyArr[1])
 			}
-			stub := &RpcStub{
-				ServerType: serverType,
-				InstanceID: instanceID,
-				RemoteIP:   ip,
-				RemotePort: port,
+			if ip == "" || port <= 0 {
+				return
 			}
-			mgr.AddStub(stub)
+			mgr.AddStub(serverType, instanceID, ip, port)
 		}
 	case registry.OperDelete:
 		{
@@ -169,18 +172,24 @@ func (mgr *RpcStubManger) registryCB(oper registry.OperType, key string, value s
 	}
 }
 
-func (mgr *RpcStubManger) AddStub(stub *RpcStub) bool {
-	serverTypeStubs, ok := mgr.typeStubMap[stub.ServerType]
+func (mgr *RpcStubManger) AddStub(serverType int, instanceId int, remoteIp string, remotePort int) bool {
+	serverTypeStubs, ok := mgr.typeStubMap[serverType]
 	if !ok {
 		serverTypeStubs = &RpcServerTypeStubs{
-			serverType: stub.ServerType,
+			serverType: serverType,
 			router:     newConsistRouter(),
 		}
-		mgr.typeStubMap[stub.ServerType] = serverTypeStubs
+		mgr.typeStubMap[serverType] = serverTypeStubs
 	}
 
+	stub := &RpcStub{
+		ServerType: serverType,
+		InstanceID: instanceId,
+		RemoteIP:   remoteIp,
+		RemotePort: remotePort,
+		netcore:    mgr.netcore,
+	}
 	return serverTypeStubs.addStub(stub)
-
 }
 
 func (mgr *RpcStubManger) DelStub(serverType int, instanceId int) bool {
@@ -197,42 +206,35 @@ func (mgr *RpcStubManger) FindStub(rpc *Rpc) *RpcStub {
 		return nil
 	}
 
-	memberName := typeStubs.router.SelectServer(rpc.RouteKey).(string)
-	if memberName == "" {
+	stub := typeStubs.router.SelectServer(rpc.RouteKey)
+	if stub == nil {
 		return nil
 	}
 
-	instanceID, _ := strconv.Atoi(memberName)
-	stub := typeStubs.getStub(instanceID)
-
-	return stub
+	return stub.(*RpcStub)
 }
 
 // 网络事件回调
 func (mgr *RpcStubManger) OnAccept(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
-	log.Debug("rpc stub manager OnAccept, peerHost:%v, peerPort:%v", peerHost, peerPort)
+	log.Info("rpc stub manager OnAccept, peerHost:%v, peerPort:%v", peerHost, peerPort)
 }
 
-func (mgr *RpcStubManger) OnConnected(c network.Connection) {
+func (mgr *RpcStubManger) OnConnect(c network.Connection, err error) {
 	peerHost, peerPort := c.GetPeerAddr()
-	log.Debug("rpc stub manager OnConnected, peerHost:%v, peerPort:%v, sessionId: %v", peerHost, peerPort, c.GetSessionId())
-
-	stub, ok := c.GetAttrib(AttrRpcStub)
-	if !ok || stub == nil {
-		return
+	if err != nil {
+		log.Info("rpc stub manager OnConnectFailed, sessionId: %v, peerHost:%v, peerPort:%v", c.GetSessionId(), peerHost, peerPort)
+	} else {
+		log.Info("rpc stub manager OnConnected, sessionId: %v, peerHost:%v, peerPort:%v,", c.GetSessionId(), peerHost, peerPort)
+		stub, ok := c.GetAttrib(AttrRpcStub)
+		if !ok || stub == nil {
+			return
+		}
+		stub.(*RpcStub).TrySendRpc()
 	}
-
-	stub.(*RpcStub).TrySendRpc()
-}
-
-func (mgr *RpcStubManger) OnConnectFailed(c network.Connection) {
-	peerHost, peerPort := c.GetPeerAddr()
-	log.Debug("rpc stub manager OnConnectFailed, peerHost:%v, peerPort:%v", peerHost, peerPort)
 }
 
 func (mgr *RpcStubManger) OnClosed(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
-	log.Debug("rpc stub manager OnClosed, peerHost:%v, peerPort:%v", peerHost, peerPort)
-
+	log.Info("rpc stub manager OnClosed, peerHost:%v, peerPort:%v", peerHost, peerPort)
 }

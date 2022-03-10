@@ -1,7 +1,9 @@
 package app
 
 import (
+	"common/consts"
 	"common/log"
+	"common/rpc"
 	"fmt"
 	"mockclient/config"
 	"mockclient/netmgr"
@@ -40,7 +42,7 @@ func (app *App) init() bool {
 	//init logger
 	logger := log.NewCommonLogger()
 	logger.AddSink(log.NewStdLogSink())
-	logger.AddSink(log.NewFileLogSink("../log/"))
+	logger.AddSink(log.NewFileLogSink("../log/", log.RotateByHour))
 	logger.Start()
 	log.SetLogger(logger)
 
@@ -52,7 +54,7 @@ func (app *App) init() bool {
 }
 
 func (app *App) Start() {
-	log.Info("==========================================================")
+	log.Info("====================================================================")
 	log.Info("")
 	log.Info("App start ..")
 
@@ -60,12 +62,20 @@ func (app *App) Start() {
 	log.Info("App config info :")
 	log.Info("%+v", app.conf)
 
+	app.netMgr.Start()
+
 	for {
 		app.update()
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 10000)
 	}
 }
 
 func (app *App) update() {
+	rpc := rpc.CreateRpc()
+	rpc.TargetSvrType = int(consts.ServerTypeGate)
+	rpc.Request = []byte("this is a rpc request")
 
+	log.Debug("begin rpc call")
+	rpc.Call()
+	log.Debug("end rpc call, error : %v, resp: %v", rpc.ErrCode, string(rpc.Response))
 }

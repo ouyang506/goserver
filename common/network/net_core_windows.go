@@ -3,6 +3,7 @@ package network
 import (
 	"common/log"
 	"common/utility/ringbuffer"
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -20,10 +21,8 @@ type NetConn struct {
 	sendBuff  *ringbuffer.RingBuffer
 	rcvBuff   *ringbuffer.RingBuffer
 
-	foceClose     int32
-	loopWriteFlag int32
-	loopReadFlag  int32
-	tcpConn       *net.TCPConn
+	foceClose int32
+	tcpConn   *net.TCPConn
 }
 
 func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {
@@ -39,7 +38,9 @@ func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {
 
 // NetPollCore implements the NetworkCore interface
 type NetPollCore struct {
-	logger               log.Logger
+	ctx         context.Context
+	ctxCancelFn context.CancelFunc
+
 	eventHandler         NetEventHandler
 	socketSendBufferSize int
 	socketRcvBufferSize  int
@@ -55,7 +56,7 @@ type NetPollCore struct {
 func newNetworkCore(opts ...Option) *NetPollCore {
 	options := loadOptions(opts)
 	netcore := &NetPollCore{}
-	netcore.logger = options.logger
+	netcore.ctx, netcore.ctxCancelFn = context.WithCancel(context.Background())
 	netcore.eventHandler = options.eventHandler
 	netcore.socketSendBufferSize = options.socketSendBufferSize
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
@@ -64,14 +65,40 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore.connMap = sync.Map{}
 	netcore.waitConnMap = sync.Map{}
 	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)
-	netcore.startWaitConnTimer()
+
 	return netcore
+}
+
+func (netcore *NetPollCore) Start() {
+	netcore.startWaitConnTimer()
+}
+
+func (netcore *NetPollCore) Stop() {
+	netcore.ctxCancelFn()
 }
 
 func (netcore *NetPollCore) startWaitConnTimer() {
 	go func() {
-		for t := range netcore.waitConnTimer.C {
-			netcore.onWaitConnTimer(t)
+		defer netcore.waitConnTimer.Stop()
+
+		ctx, cancel := context.WithCancel(netcore.ctx)
+		defer cancel()
+
+		for {
+			bStop := false
+			select {
+			case t := <-netcore.waitConnTimer.C:
+				{
+					netcore.onWaitConnTimer(t)
+				}
+			case <-ctx.Done():
+				{
+					bStop = true
+				}
+			}
+			if bStop {
+				return
+			}
 		}
 	}()
 }
@@ -83,8 +110,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 			return true
 		}
 
-		if atomic.LoadInt32(&conn.loopReadFlag) != 0 ||
-			atomic.LoadInt32(&conn.loopWriteFlag) != 0 {
+		if conn.GetConnState() != ConnStateInit {
 			return true
 		}
 
@@ -92,8 +118,8 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		dialer := net.Dialer{Timeout: time.Duration(200) * time.Millisecond}
 		tcpConn, err := dialer.Dial("tcp", endpoint)
 		if err != nil {
-			netcore.logger.LogError("dial tcp error: %v, endpoint: %v", err, endpoint)
-			netcore.eventHandler.OnConnectFailed(conn)
+			log.Error("dial tcp error: %v, endpoint: %v", err, endpoint)
+			netcore.eventHandler.OnConnect(conn, err)
 
 			if conn.autoReconnect {
 				conn.lastTryConTime = t.Unix()
@@ -112,13 +138,9 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 
 		netcore.waitConnMap.Delete(conn.sessionId)
 		netcore.connMap.Store(conn.sessionId, conn)
-		netcore.eventHandler.OnConnected(conn)
+		netcore.eventHandler.OnConnect(conn, nil)
 
-		atomic.StoreInt32(&conn.loopReadFlag, 1)
-		atomic.StoreInt32(&conn.loopWriteFlag, 1)
-		atomic.StoreInt32(&conn.foceClose, 0)
-		go netcore.loopRead(conn)
-		go netcore.loopWrite(conn)
+		netcore.loopEvent(conn)
 		return true
 	})
 }
@@ -127,7 +149,7 @@ func (netcore *NetPollCore) loopAccept() {
 	for {
 		tcpConn, err := netcore.listener.AcceptTCP()
 		if err != nil {
-			netcore.logger.LogError("accept error :%v", err)
+			log.Error("accept error :%v", err)
 			continue
 		}
 
@@ -147,9 +169,88 @@ func (netcore *NetPollCore) loopAccept() {
 		netcore.connMap.Store(conn.sessionId, conn)
 		netcore.eventHandler.OnAccept(conn)
 
-		go netcore.loopRead(conn)
-		go netcore.loopWrite(conn)
+		netcore.loopEvent(conn)
 	}
+}
+
+func (netcore *NetPollCore) loopEvent(conn *NetConn) {
+	go func() {
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+		go func() {
+			netcore.loopRead(conn)
+			wg.Done()
+		}()
+		go func() {
+			netcore.loopWrite(conn)
+			wg.Done()
+		}()
+		//loop结束重置为初始化状态
+		conn.SetConnState(ConnStateInit)
+	}()
+}
+
+func (netcore *NetPollCore) loopRead(conn *NetConn) error {
+	tcpConn := conn.tcpConn
+
+	for {
+		head, tail := conn.rcvBuff.PeekFreeAll()
+		bClose := false
+		totalRead := 0
+		for _, buff := range [2][]byte{head, tail} {
+			if len(buff) <= 0 {
+				break
+			}
+
+			tcpConn.SetReadDeadline(time.Now().Add(time.Duration(100) + time.Second))
+			n, err := tcpConn.Read(buff)
+			if err != nil || n <= 0 {
+				if !errors.Is(err, os.ErrDeadlineExceeded) {
+					log.Error("tcp conn read error:%v, readLen:%v", err, n)
+					bClose = true
+					break
+				}
+			} else {
+				totalRead += n
+			}
+		}
+
+		if totalRead > 0 {
+			conn.rcvBuff.Foward(totalRead)
+		}
+
+		for {
+			msgBuf, err := netcore.codec.Decode(conn.rcvBuff)
+			if err != nil {
+				log.Debug("loop read decode msg error, %s", err)
+				bClose = true
+				break
+			}
+			if len(msgBuf) > 0 {
+				log.Debug("session:%v rcv data : %v", conn.sessionId, string(msgBuf))
+			} else {
+				if conn.rcvBuff.IsFull() {
+					oldCap := conn.rcvBuff.Cap()
+					conn.rcvBuff.Grow(oldCap + oldCap/2)
+					log.Info("loop read grow rcv buffer capcity from %v to %v, sessionId:%v", oldCap, conn.rcvBuff.Cap(), conn.sessionId)
+				}
+				break
+			}
+		}
+
+		if !bClose {
+			if atomic.LoadInt32(&conn.foceClose) > 0 {
+				bClose = true
+			}
+		}
+
+		if bClose {
+			netcore.close(conn)
+			break
+		}
+
+	}
+	return nil
 }
 
 func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
@@ -157,13 +258,13 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 		bClose := false
 		for {
 			timeout := false
-			t := time.NewTimer(time.Duration(100) * time.Millisecond)
+			t := time.NewTimer(time.Millisecond * 100)
 			select {
 			case buff := <-conn.sendChann:
 				err := netcore.codec.Encode(buff, conn.sendBuff)
 				if err != nil {
 					bClose = true
-					netcore.logger.LogError("loop write encode buff error:%s, sessionId:%d", err, conn.sessionId)
+					log.Error("loop write encode buff error:%s, sessionId:%d", err, conn.sessionId)
 				}
 			case <-t.C:
 				timeout = true
@@ -184,7 +285,7 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 				n, err := conn.tcpConn.Write(b)
 				if err != nil || n <= 0 {
 					if !errors.Is(err, os.ErrDeadlineExceeded) {
-						netcore.logger.LogError("tcp conn write error:%v, writeLen:%v, sessionId:%v",
+						log.Error("tcp conn write error:%v, writeLen:%v, sessionId:%v",
 							err, n, conn.sessionId)
 						bClose = true
 						break
@@ -205,85 +306,17 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 		}
 
 		if bClose {
-			atomic.StoreInt32(&conn.loopWriteFlag, 0)
-			netcore.logger.LogDebug("clear loop writing flag, is_client:%v", conn.isClient)
 			netcore.close(conn)
 			break
 		}
 	}
 
-	return nil
-}
-
-func (netcore *NetPollCore) loopRead(conn *NetConn) error {
-	tcpConn := conn.tcpConn
-
-	for {
-		head, tail := conn.rcvBuff.PeekFreeAll()
-		bClose := false
-		totalRead := 0
-		for _, buff := range [2][]byte{head, tail} {
-			if len(buff) <= 0 {
-				break
-			}
-
-			tcpConn.SetReadDeadline(time.Now().Add(time.Duration(100) + time.Second))
-			n, err := tcpConn.Read(buff)
-			if err != nil || n <= 0 {
-				if !errors.Is(err, os.ErrDeadlineExceeded) {
-					netcore.logger.LogError("tcp conn read error:%v, readLen:%v", err, n)
-					bClose = true
-					break
-				}
-			} else {
-				totalRead += n
-			}
-		}
-
-		if totalRead > 0 {
-			conn.rcvBuff.Foward(totalRead)
-		}
-
-		for {
-			msgBuf, err := netcore.codec.Decode(conn.rcvBuff)
-			if err != nil {
-				netcore.logger.LogDebug("loop read decode msg error, %s", err)
-				bClose = true
-				break
-			}
-			if len(msgBuf) > 0 {
-				netcore.logger.LogDebug("session:%v rcv data : %v", conn.sessionId, string(msgBuf))
-			} else {
-				if conn.rcvBuff.IsFull() {
-					oldCap := conn.rcvBuff.Cap()
-					conn.rcvBuff.Grow(oldCap + oldCap/2)
-					netcore.logger.LogInfo("loop read grow rcv buffer capcity from %v to %v, sessionId:%v", oldCap, conn.rcvBuff.Cap(), conn.sessionId)
-				}
-				break
-			}
-		}
-
-		if !bClose {
-			if atomic.LoadInt32(&conn.foceClose) > 0 {
-				bClose = true
-			}
-		}
-
-		if bClose {
-			atomic.StoreInt32(&conn.loopReadFlag, 0)
-			netcore.logger.LogDebug("clear loop reading flag, is_client:%v", conn.isClient)
-			netcore.close(conn)
-			break
-		}
-
-	}
 	return nil
 }
 
 func (netcore *NetPollCore) close(conn *NetConn) error {
-	if conn.GetConnState() != ConnStateClosed {
+	if conn.CompareAndSwapConnState(ConnStateConnected, ConnStateClosed) {
 		conn.tcpConn.Close()
-		conn.SetConnState(ConnStateClosed)
 		netcore.connMap.Delete(conn.sessionId)
 		netcore.eventHandler.OnClosed(conn)
 
@@ -299,7 +332,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 	endpoint := fmt.Sprintf("%s:%d", host, port)
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", endpoint)
 	if err != nil {
-		netcore.logger.LogError("netcore resolve tcp addr error:%v, endpoint:%v", err, endpoint)
+		log.Error("netcore resolve tcp addr error:%v, endpoint:%v", err, endpoint)
 		return nil
 	}
 
@@ -308,7 +341,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 		if listener != nil {
 			listener.Close()
 		}
-		netcore.logger.LogError("netcore listen error:%v, endpoint:%v", err, endpoint)
+		log.Error("netcore listen error:%v, endpoint:%v", err, endpoint)
 		return nil
 	}
 	netcore.listener = *listener
@@ -340,14 +373,14 @@ func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 
 	c, ok := netcore.connMap.Load(sessionId)
 	if !ok {
-		netcore.logger.LogError("tcp send connection not found, sessionId:%v", sessionId)
+		log.Error("tcp send connection not found, sessionId:%v", sessionId)
 		return errors.New("tcp send connection not found")
 	}
 	conn := c.(*NetConn)
 	select {
 	case conn.sendChann <- buff:
 	default:
-		netcore.logger.LogError("tcp send channel full")
+		log.Error("tcp send channel full")
 		return errors.New("send channel full")
 	}
 
@@ -357,13 +390,13 @@ func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 func (netcore *NetPollCore) TcpClose(sessionId int64) error {
 	c, ok := netcore.connMap.Load(sessionId)
 	if !ok {
-		netcore.logger.LogError("tcp close connection not found, sessionId:%v", sessionId)
+		log.Error("tcp close connection not found, sessionId:%v", sessionId)
 		return errors.New("tcp close connection not found")
 	}
 	conn := c.(*NetConn)
 	swapped := atomic.CompareAndSwapInt32(&conn.foceClose, 0, 1)
 	if !swapped {
-		netcore.logger.LogInfo("tcp close connection, the connection is closing yet")
+		log.Info("tcp close connection, the connection is closing yet")
 	}
 	return nil
 }

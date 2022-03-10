@@ -54,20 +54,38 @@ func GetLogger() Logger {
 }
 
 func Debug(fmtStr string, args ...interface{}) {
+	if logger == nil {
+		return
+	}
 	logger.LogDebug(fmtStr, args...)
 }
 func Info(fmtStr string, args ...interface{}) {
+	if logger == nil {
+		return
+	}
 	logger.LogInfo(fmtStr, args...)
 }
 func Warn(fmtStr string, args ...interface{}) {
+	if logger == nil {
+		return
+	}
 	logger.LogWarn(fmtStr, args...)
 }
 func Error(fmtStr string, args ...interface{}) {
+	if logger == nil {
+		return
+	}
 	logger.LogError(fmtStr, args...)
 }
 func Fatal(fmtStr string, args ...interface{}) {
+	if logger == nil {
+		return
+	}
 	logger.LogFatal(fmtStr, args...)
 }
 func Flush() {
+	if logger == nil {
+		return
+	}
 	logger.Flush()
 }

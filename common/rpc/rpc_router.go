@@ -34,7 +34,8 @@ type ConsistRouter struct {
 
 func newConsistRouter() *ConsistRouter {
 	r := &ConsistRouter{
-		consistHash: consistent.NewConsistent(),
+		consistHash:  consistent.NewConsistent(),
+		routeInfoMap: map[string]interface{}{},
 	}
 	return r
 }

@@ -207,7 +207,7 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 }
 
 // implement network core TcpConnect
-func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool,  attrib map[interface{}]interface{}) (Connection, error) {
+func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool, attrib map[interface{}]interface{}) (Connection, error) {
 
 	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
@@ -444,7 +444,7 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 	conn.state = int32(ConnStateConnected)
 	poll.addConnection(conn)
 	poll.addReadWrite(fd)
-	poll.eventHandler.OnConnected(conn)
+	poll.eventHandler.OnConnect(conn, nil)
 	poll.netcore.removeWaitConn(conn.sessionId)
 
 	return nil
@@ -729,7 +729,7 @@ func (poll *Poll) loopWrite(fd int) error {
 
 		conn.state = int32(ConnStateConnected)
 		poll.netcore.removeWaitConn(conn.sessionId)
-		poll.eventHandler.OnConnected(conn)
+		poll.eventHandler.OnConnect(conn, nil)
 	}
 
 	if conn.sendBuff.IsEmpty() {
@@ -782,7 +782,7 @@ func (poll *Poll) loopError(fd int) {
 	if conn != nil && conn.state == int32(ConnStateConnecting) {
 		poll.logger.LogError("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
-		poll.eventHandler.OnConnectFailed(conn)
+		poll.eventHandler.OnConnect(conn, errors.New("epoll connect to peer server failed"))
 	}
 
 	poll.close(fd)
@@ -812,7 +812,7 @@ func (poll *Poll) close(fd int) {
 		poll.eventHandler.OnClosed(conn)
 	}
 
-	if conn.IsClient() && conn.autoReconnect{
+	if conn.IsClient() && conn.autoReconnect {
 		poll.netcore.addWaitConn(conn)
 	}
 }

@@ -10,11 +10,7 @@
 			"path": "servers\\gameserver"
 		},
 		{
-			"path": "servers\\dbserver"
-		},
-		{
 			"path": "clients\\mockclient"
 		}
-		
 	]
 }

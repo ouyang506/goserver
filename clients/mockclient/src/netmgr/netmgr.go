@@ -1,13 +1,14 @@
 package netmgr
 
 import (
-	"common/enums"
+	"common/consts"
 	"common/rpc"
 	"mockclient/config"
 )
 
 // 网络管理
 type NetMgr struct {
+	conf   *config.Config
 	rpcMgr *rpc.RpcManager
 }
 
@@ -19,13 +20,12 @@ func NewNetMgr() *NetMgr {
 }
 
 func (mgr *NetMgr) Init(conf *config.Config) {
-	for i, gateInfo := range conf.Gates.GateInfos {
+	mgr.conf = conf
+}
+
+func (mgr *NetMgr) Start() {
+	for i, gateInfo := range mgr.conf.Gates.GateInfos {
 		stubMgr := mgr.rpcMgr.GetStubMgr()
-		stubMgr.AddStub(&rpc.RpcStub{
-			ServerType:       int(enums.ServerTypeGate),
-			ServerTypeInstID: i,
-			RemoteIP:         gateInfo.IP,
-			RemotePort:       int(gateInfo.Port),
-		})
+		stubMgr.AddStub(int(consts.ServerTypeGate), i, gateInfo.IP, int(gateInfo.Port))
 	}
 }

@@ -1,4 +1,4 @@
-package enums
+package consts
 
 type ServerType int32
 
