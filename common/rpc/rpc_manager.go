@@ -2,26 +2,28 @@ package rpc
 
 import (
 	"common/log"
-	"sync/atomic"
+	"common/utility/timer"
+	"time"
 )
 
-var (
-	nextSessionId = int64(0)
-)
-
-func genNextSessionId() int64 {
-	return atomic.AddInt64(&nextSessionId, 1)
+type PendingRpcEntry struct {
+	rpc     *Rpc
+	rpcStub *RpcStub
 }
 
 type RpcManager struct {
-	rpcStubMgr    *RpcStubManger
-	pendingRpcMap map[int64]*Rpc //TODO: 添加rpc过期删除
+	rpcStubMgr *RpcStubManger
+
+	pendingRpcMap map[int64]*PendingRpcEntry
+	timerMgr      *timer.TimerWheel
 }
 
 func NewRpcManager() *RpcManager {
 	mgr := &RpcManager{}
 	mgr.rpcStubMgr = NewRpcStubManager()
-	mgr.pendingRpcMap = map[int64]*Rpc{}
+	mgr.pendingRpcMap = map[int64]*PendingRpcEntry{}
+	mgr.timerMgr = timer.NewTimerWheel(&timer.Option{TimeAccuracy: time.Millisecond * 200})
+	mgr.timerMgr.Start()
 	return mgr
 }
 
@@ -30,8 +32,8 @@ func (mgr *RpcManager) GetStubMgr() *RpcStubManger {
 }
 
 func (mgr *RpcManager) AddRpc(rpc *Rpc) bool {
-	if rpc.SessionID == 0 {
-		rpc.SessionID = genNextSessionId()
+	if rpc.CallId == 0 {
+		rpc.CallId = genNextRpcCallId()
 	}
 	rpcStub := mgr.rpcStubMgr.FindStub(rpc)
 	if rpcStub == nil {
@@ -43,17 +45,48 @@ func (mgr *RpcManager) AddRpc(rpc *Rpc) bool {
 		return false
 	}
 
-	mgr.pendingRpcMap[rpc.SessionID] = rpc
+	pendingRpcEntry := &PendingRpcEntry{
+		rpc:     rpc,
+		rpcStub: rpcStub,
+	}
+	mgr.pendingRpcMap[rpc.CallId] = pendingRpcEntry
+
+	mgr.timerMgr.AddTimer(rpc.Timeout, func() {
+		log.Debug("rcp timeout : CallId : %v", rpc.CallId)
+		mgr.RemoveRpc(rpc.CallId)
+		select {
+		case rpc.Chan <- nil:
+		default:
+		}
+	})
+
+	return true
+}
+
+func (mgr *RpcManager) RemoveRpc(sessionId int64) bool {
+	pendingRpcEntry, ok := mgr.pendingRpcMap[sessionId]
+	if !ok {
+		return false
+	}
+
+	if pendingRpcEntry.rpcStub == nil {
+		return false
+	}
+
+	if !pendingRpcEntry.rpcStub.RemoveRpc(sessionId) {
+		return false
+	}
+
 	return true
 }
 
 func (mgr *RpcManager) RcvRpcResponse(sessionId int64, resp []byte) {
-	rpc, ok := mgr.pendingRpcMap[sessionId]
+	pendingRpcEntry, ok := mgr.pendingRpcMap[sessionId]
 	if !ok {
 		return
 	}
 	select {
-	case rpc.Chan <- nil:
+	case pendingRpcEntry.rpc.Chan <- nil:
 		{
 
 		}

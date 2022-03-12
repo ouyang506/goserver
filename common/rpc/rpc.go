@@ -1,7 +1,7 @@
 package rpc
 
 import (
-	"errors"
+	"sync/atomic"
 	"time"
 )
 
@@ -10,8 +10,13 @@ var (
 )
 
 var (
-	PushRpcError error = errors.New("push rpc error")
+	DefaultRpcTimeout = time.Second * 3
+	nextRpcCallId     = int64(0)
 )
+
+func genNextRpcCallId() int64 {
+	return atomic.AddInt64(&nextRpcCallId, 1)
+}
 
 // 使用rpc前需要先初始化rpc管理器
 func InitRpc(mgr *RpcManager) {
@@ -19,46 +24,35 @@ func InitRpc(mgr *RpcManager) {
 }
 
 type Rpc struct {
-	SessionID     int64  // rpc请求唯一ID
-	Oneway        bool   // 是否等待返回
-	ErrCode       int32  // rpc返回的错误码
-	TargetSvrType int    // 目标服务类型
-	RouteKey      string // 路由key
-	Request       []byte
-	Response      []byte
+	CallId        int64         // rpc请求唯一ID
+	Timeout       time.Duration // 超时时间
+	TargetSvrType int           // 目标服务类型
+	RouteKey      string        // 路由key
+	Request       []byte        // 请求的数据
+	Response      []byte        // 返回的数据
 	Chan          chan (error)
 }
 
 func CreateRpc() *Rpc {
-	rpc := &Rpc{}
+	rpc := &Rpc{
+		CallId: genNextRpcCallId(),
+		Chan:   make(chan error),
+	}
+	if rpc.Timeout <= 0 {
+		rpc.Timeout = DefaultRpcTimeout
+	}
 	return rpc
 }
 
 func (rpc *Rpc) Call() {
-	if !rpc.Oneway {
-		rpc.Chan = make(chan error)
-	}
-
 	ret := rpcMgr.AddRpc(rpc)
 	if !ret {
 		return
 	}
 
-	if !rpc.Oneway {
-		tick := time.NewTicker(time.Second * 3)
-		defer tick.Stop()
-		select {
-		case err := <-rpc.Chan:
-			{
-				if err != nil {
-					rpc.ErrCode = 1
-					return
-				}
-			}
-		case <-tick.C:
-			{
+	<-rpc.Chan
+}
 
-			}
-		}
-	}
+func (rpc *Rpc) Notify() {
+	rpcMgr.AddRpc(rpc)
 }

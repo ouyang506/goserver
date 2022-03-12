@@ -2,6 +2,5 @@
 <root>
     <gates>
         <gate ip="127.0.0.1" port="5000"/>
-        <gate ip="127.0.0.1" port="5001"/>
     </gates>
 </root>

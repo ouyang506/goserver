@@ -245,6 +245,12 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 			}
 			if len(msgBuf) > 0 {
 				log.Debug("session:%v rcv data : %v", conn.sessionId, string(msgBuf))
+
+				// test reponse
+				if string(msgBuf) == "this is a rpc request" {
+					netcore.TcpSend(conn.sessionId, []byte("this is rpc response"))
+				}
+
 			} else {
 				if conn.rcvBuff.IsFull() {
 					oldCap := conn.rcvBuff.Cap()
@@ -294,12 +300,12 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 		totalWrite := 0
 		if !conn.sendBuff.IsEmpty() {
 			head, tail := conn.sendBuff.PeekAll()
-			for _, b := range [2][]byte{head, tail} {
-				if len(b) <= 0 {
+			for _, data := range [2][]byte{head, tail} {
+				if len(data) <= 0 {
 					break
 				}
 				conn.tcpConn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
-				n, err := conn.tcpConn.Write(b)
+				n, err := conn.tcpConn.Write(data)
 				if err != nil || n <= 0 {
 					if !errors.Is(err, os.ErrDeadlineExceeded) {
 						log.Error("tcp conn write error:%v, writeLen:%v, sessionId:%v",
@@ -367,6 +373,7 @@ func (netcore *NetPollCore) moveConnToConnected(sessionId int64) bool {
 	if !ok {
 		return false
 	}
+	delete(netcore.waitConnMap, sessionId)
 	netcore.connectedMap[sessionId] = conn
 	return true
 }
@@ -379,6 +386,7 @@ func (netcore *NetPollCore) moveConnToWaiting(sessionId int64) bool {
 	if !ok {
 		return false
 	}
+	delete(netcore.connectedMap, sessionId)
 	netcore.waitConnMap[sessionId] = conn
 	return true
 }
@@ -388,7 +396,7 @@ func (netcore *NetPollCore) addWaitingConn(sessionId int64, conn *NetConn) bool 
 	netcore.connMapMutex.Lock()
 	defer netcore.connMapMutex.Unlock()
 	_, ok := netcore.waitConnMap[sessionId]
-	if !ok {
+	if ok {
 		return false
 	}
 	netcore.waitConnMap[sessionId] = conn
@@ -423,7 +431,7 @@ func (netcore *NetPollCore) addConnectedConn(sessionId int64, conn *NetConn) boo
 	netcore.connMapMutex.Lock()
 	defer netcore.connMapMutex.Unlock()
 	_, ok := netcore.connectedMap[sessionId]
-	if !ok {
+	if ok {
 		return false
 	}
 	netcore.connectedMap[sessionId] = conn

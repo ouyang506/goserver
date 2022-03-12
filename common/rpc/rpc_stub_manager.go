@@ -30,13 +30,22 @@ type RpcStub struct {
 }
 
 func (stub *RpcStub) PushRpc(rpc *Rpc) bool {
-
 	if len(stub.pendingRpcQueue) >= RpcQueueMax {
 		return false
 	}
 	stub.pendingRpcQueue = append(stub.pendingRpcQueue, rpc)
 	stub.TrySendRpc()
 	return true
+}
+
+func (stub *RpcStub) RemoveRpc(callId int64) bool {
+	for i, v := range stub.pendingRpcQueue {
+		if v.CallId == callId {
+			stub.pendingRpcQueue = append(stub.pendingRpcQueue[:i], stub.pendingRpcQueue[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 func (stub *RpcStub) TrySendRpc() {
@@ -60,7 +69,7 @@ func (stub *RpcStub) TrySendRpc() {
 			}
 			rpc := stub.pendingRpcQueue[0]
 			stub.pendingRpcQueue = stub.pendingRpcQueue[1:]
-			err := stub.netcore.TcpSend(rpc.SessionID, rpc.Request)
+			err := stub.netcore.TcpSend(netconn.(network.Connection).GetSessionId(), rpc.Request)
 			if err != nil {
 				break
 			}

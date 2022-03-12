@@ -94,6 +94,8 @@ type TimerWheel struct {
 	lastTickTime int64
 
 	expiredList []*TimerNode
+
+	stopChan chan bool
 }
 
 func NewTimerWheel(option *Option) *TimerWheel {
@@ -129,9 +131,38 @@ func NewTimerWheel(option *Option) *TimerWheel {
 	tw.lastTickTime = time.Now().UnixNano() / int64(tw.timeAccuracy)
 
 	tw.expiredList = []*TimerNode{}
+
+	tw.stopChan = make(chan bool)
 	return tw
 }
 
+func (tw *TimerWheel) Start() {
+	go func() {
+		tick := time.NewTicker(tw.timeAccuracy)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				{
+					tw.Tick()
+				}
+			case <-tw.stopChan:
+				{
+					return
+				}
+			}
+		}
+	}()
+}
+
+func (tw *TimerWheel) Stop() {
+	select {
+	case tw.stopChan <- true:
+	default:
+	}
+}
+
+// tick by wall clock
 func (tw *TimerWheel) Tick() {
 	currentTime := time.Now().UnixNano() / int64(tw.timeAccuracy)
 	delta := currentTime - tw.lastTickTime
@@ -139,6 +170,14 @@ func (tw *TimerWheel) Tick() {
 		tw.doTick(int(delta))
 	}
 	tw.lastTickTime = currentTime
+}
+
+// user called tick by elapsed time
+func (tw *TimerWheel) TickElapsed(elaspeTime time.Duration) {
+	delta := int64(elaspeTime) / int64(tw.timeAccuracy)
+	if delta > 0 {
+		tw.doTick(int(delta))
+	}
 }
 
 func (tw *TimerWheel) AddTimer(duration time.Duration, cb TimerCallBack) *TimerNode {

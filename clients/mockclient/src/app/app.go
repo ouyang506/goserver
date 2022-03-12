@@ -66,7 +66,7 @@ func (app *App) Start() {
 
 	for {
 		app.update()
-		time.Sleep(time.Millisecond * 10000)
+		time.Sleep(time.Second * 10000)
 	}
 }
 
@@ -77,5 +77,5 @@ func (app *App) update() {
 
 	log.Debug("begin rpc call")
 	rpc.Call()
-	log.Debug("end rpc call, error : %v, resp: %v", rpc.ErrCode, string(rpc.Response))
+	log.Debug("end rpc call, resp: %v", string(rpc.Response))
 }
