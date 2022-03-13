@@ -11,7 +11,7 @@ var (
 
 var (
 	DefaultRpcTimeout = time.Second * 3
-	nextRpcCallId     = int64(0)
+	nextRpcCallId     = int64(100)
 )
 
 func genNextRpcCallId() int64 {

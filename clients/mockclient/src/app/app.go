@@ -73,6 +73,7 @@ func (app *App) Start() {
 
 func (app *App) update() {
 	rpcEntry := rpc.CreateRpc()
+	rpcEntry.Timeout = time.Second * 100
 	rpcEntry.TargetSvrType = int(consts.ServerTypeGate)
 	req := &pbmsg.LoginGateReqT{}
 	username := "test_name"
@@ -80,7 +81,7 @@ func (app *App) update() {
 	passwd := "test_passwd"
 	req.Passwd = &passwd
 	rpcEntry.ReqMsg = &rpc.InnerMessage{
-		Head:  rpc.InnerMessageHead{MsgID: int(pbmsg.MsgID_login_gate_req)},
+		Head:  rpc.InnerMessageHead{CallId: rpcEntry.CallId, MsgID: int(pbmsg.MsgID_login_gate_req)},
 		PbMsg: req,
 	}
 

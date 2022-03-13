@@ -35,8 +35,11 @@ func (cc *InnerMessageCodec) Encode(c network.Connection, in interface{}) (inter
 	innerMsg := in.(*InnerMessage)
 
 	out := make([]byte, 12)
-	binary.LittleEndian.PutUint64(out, uint64(innerMsg.Head.CallId))
-	binary.LittleEndian.PutUint32(out, uint32(innerMsg.Head.MsgID))
+	skip := 0
+	binary.LittleEndian.PutUint64(out[skip:], uint64(innerMsg.Head.CallId))
+	skip += 8
+	binary.LittleEndian.PutUint32(out[skip:], uint32(innerMsg.Head.MsgID))
+	skip += 4
 
 	content, err := proto.Marshal(innerMsg.PbMsg)
 	if err != nil {
@@ -53,16 +56,19 @@ func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (inter
 		return nil, false, errors.New("unmarshal inner message msg id error")
 	}
 
+	skip := 0
 	msg := &InnerMessage{}
 	msg.Head.CallId = int64(binary.LittleEndian.Uint64(innerMsgBytes))
-	msg.Head.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes))
+	skip += 8
+	msg.Head.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
+	skip += 4
 
 	var pb proto.Message = nil
 	switch msg.Head.MsgID {
 	case int(pbmsg.MsgID_login_gate_req):
 		pb = &pbmsg.LoginGateReqT{}
 	case int(pbmsg.MsgID_login_gate_resp):
-		pb = &pbmsg.LoginGateReqT{}
+		pb = &pbmsg.LoginGateRespT{}
 	default:
 	}
 
@@ -70,7 +76,7 @@ func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (inter
 		return nil, false, fmt.Errorf("can not find pb message by id : %v", msg.Head.MsgID)
 	}
 
-	err := proto.Unmarshal(innerMsgBytes[4:], pb)
+	err := proto.Unmarshal(innerMsgBytes[skip:], pb)
 	if err != nil {
 		return nil, false, err
 	}

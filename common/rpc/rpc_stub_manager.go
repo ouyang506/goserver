@@ -223,6 +223,7 @@ func (mgr *RpcStubManger) OnRcvMsg(c network.Connection, msg interface{}) {
 	// for test response
 	if rcvInnerMsg.Head.MsgID == int(pbmsg.MsgID_login_gate_req) {
 		respInnerMsg := &InnerMessage{}
+		respInnerMsg.Head.CallId = rcvInnerMsg.Head.CallId
 		respInnerMsg.Head.MsgID = int(pbmsg.MsgID_login_gate_resp)
 		pb := &pbmsg.LoginGateRespT{}
 		respInnerMsg.PbMsg = pb
