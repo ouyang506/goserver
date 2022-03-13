@@ -64,8 +64,8 @@ func (sink *FileLogSink) Sink(content *LogContent) {
 	if sink.curFile == nil {
 		return
 	}
-	output := fmt.Sprintf("[%s][%s]%s\n", content.logTime.Format("2006-01-02 15:04:05.000"),
-		LogLevelName[content.logLvl], content.content)
+	output := fmt.Sprintf("[%s][%s][%s]%s\n", content.logTime.Format("2006-01-02 15:04:05.000"),
+		LogLevelName[content.logLvl], content.fileName, content.content)
 	sink.curFile.WriteString(output)
 }
 

@@ -3,6 +3,8 @@ package log
 import (
 	"common/utility/queue"
 	"fmt"
+	"runtime"
+	"strings"
 	"time"
 )
 
@@ -48,6 +50,29 @@ func (cl *CommonLogger) levelLog(lvl LogLevel, fmtStr string, args ...interface{
 	content := &LogContent{}
 	content.logLvl = lvl
 	content.logTime = time.Now()
+
+	fileName := ""
+	tracebuf := make([]byte, 1024)
+	length := runtime.Stack(tracebuf, false)
+	tracebuf = tracebuf[:length]
+	slitArr := strings.Split(string(tracebuf), "\n")
+	if len(slitArr) >= 9 {
+		splitNameArr := strings.Split(slitArr[8], " +0x")
+		if len(splitNameArr) >= 2 {
+			startPos := 0
+			size := len(splitNameArr[0])
+			for i := size - 1; i >= 0; i-- {
+				if splitNameArr[0][i] == '/' {
+					startPos = i
+					break
+				}
+			}
+			if startPos > 0 {
+				fileName = string(splitNameArr[0][startPos+1:])
+			}
+		}
+	}
+	content.fileName = fileName
 	content.content = fmt.Sprintf(fmtStr, args...)
 	cl.queue.Enqueue(content)
 }

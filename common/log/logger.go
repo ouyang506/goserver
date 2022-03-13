@@ -36,9 +36,10 @@ type LogSink interface {
 }
 
 type LogContent struct {
-	logTime time.Time
-	logLvl  LogLevel
-	content string
+	logTime  time.Time
+	logLvl   LogLevel
+	fileName string
+	content  string
 }
 
 //**************************//
