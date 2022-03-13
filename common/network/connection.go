@@ -1,6 +1,7 @@
 package network
 
 import (
+	"common/utility/ringbuffer"
 	"sync"
 	"sync/atomic"
 )
@@ -29,9 +30,12 @@ func genNextSessionId() int64 {
 type Connection interface {
 	GetSessionId() int64
 	GetAddr() (string, int)
-	GetPeerAddr() (string, int)
+	GetPeerAddr() (peerIp string, peerPort int)
 	IsClient() bool
 	GetConnState() ConnState
+	CompareAndSwapConnState(oldState ConnState, newState ConnState) bool
+	GetSendBuff() *ringbuffer.RingBuffer
+	GetRcvBuff() *ringbuffer.RingBuffer
 	SetAttrib(k interface{}, v interface{})
 	GetAttrib(k interface{}) (interface{}, bool)
 }
@@ -48,6 +52,9 @@ type BaseConn struct {
 	isClient       bool
 	autoReconnect  bool
 	lastTryConTime int64
+
+	sendBuff *ringbuffer.RingBuffer
+	rcvBuff  *ringbuffer.RingBuffer
 
 	attrMap sync.Map
 }
@@ -78,6 +85,14 @@ func (c *BaseConn) SetConnState(v ConnState) {
 
 func (c *BaseConn) CompareAndSwapConnState(oldState ConnState, newState ConnState) bool {
 	return atomic.CompareAndSwapInt32(&c.state, int32(oldState), int32(newState))
+}
+
+func (c *BaseConn) GetSendBuff() *ringbuffer.RingBuffer {
+	return c.sendBuff
+}
+
+func (c *BaseConn) GetRcvBuff() *ringbuffer.RingBuffer {
+	return c.rcvBuff
 }
 
 func (c *BaseConn) SetAttrib(k interface{}, v interface{}) {

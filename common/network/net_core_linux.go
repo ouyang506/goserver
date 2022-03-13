@@ -16,9 +16,7 @@ import (
 
 type NetConn struct {
 	BaseConn
-	fd       int
-	sendBuff *ringbuffer.RingBuffer
-	rcvBuff  *ringbuffer.RingBuffer
+	fd int
 }
 
 func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {

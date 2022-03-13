@@ -1,12 +1,13 @@
 package network
 
+// thread safe
 type NetworkCore interface {
 	Start()
 	Stop()
 
 	TcpListen(host string, port int) error
 	TcpConnect(host string, port int, autoReconnect bool, attrib map[interface{}]interface{}) (Connection, error) //nonblock
-	TcpSend(sessionId int64, buff []byte) error
+	TcpSendMsg(sessionId int64, msg interface{}) error
 	TcpClose(sessionId int64) error
 }
 
@@ -19,4 +20,5 @@ type NetEventHandler interface {
 	OnAccept(c Connection)
 	OnConnect(c Connection, err error)
 	OnClosed(c Connection)
+	OnRcvMsg(c Connection, msg interface{})
 }

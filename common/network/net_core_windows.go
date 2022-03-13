@@ -17,9 +17,7 @@ import (
 
 type NetConn struct {
 	BaseConn
-	sendChann chan []byte
-	sendBuff  *ringbuffer.RingBuffer
-	rcvBuff   *ringbuffer.RingBuffer
+	sendChann chan interface{}
 
 	foceClose int32 // atomic
 	tcpConn   *net.TCPConn
@@ -30,7 +28,7 @@ func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {
 	c.sessionId = genNextSessionId()
 	c.state = int32(ConnStateInit)
 	c.attrMap = sync.Map{}
-	c.sendChann = make(chan []byte, sendBuffSize/4)
+	c.sendChann = make(chan interface{}, sendBuffSize/4)
 	c.sendBuff = ringbuffer.NewRingBuffer(sendBuffSize)
 	c.rcvBuff = ringbuffer.NewRingBuffer(rcvBuffSize)
 	return c
@@ -47,7 +45,7 @@ type NetPollCore struct {
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
-	codec                Codec
+	codecs               []Codec
 
 	waitConnTimer time.Ticker
 
@@ -64,7 +62,7 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore.socketSendBufferSize = options.socketSendBufferSize
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.socketTcpNoDelay = options.socketTcpNoDelay
-	netcore.codec = options.codec
+	netcore.codecs = options.codecs
 	netcore.connectedMap = map[int64]*NetConn{}
 	netcore.waitConnMap = map[int64]*NetConn{}
 	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)
@@ -218,15 +216,14 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 			if len(buff) <= 0 {
 				break
 			}
-
 			tcpConn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 			n, err := tcpConn.Read(buff)
 			if err != nil || n <= 0 {
 				if !errors.Is(err, os.ErrDeadlineExceeded) {
 					log.Error("tcp conn read error:%v, readLen:%v", err, n)
 					bClose = true
-					break
 				}
+				break
 			} else {
 				totalRead += n
 			}
@@ -234,30 +231,39 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 
 		if totalRead > 0 {
 			conn.rcvBuff.Foward(totalRead)
-		}
-
-		for {
-			msgBuf, err := netcore.codec.Decode(conn.rcvBuff)
-			if err != nil {
-				log.Debug("loop read decode msg error, %s", err)
-				bClose = true
-				break
-			}
-			if len(msgBuf) > 0 {
-				log.Debug("session:%v rcv data : %v", conn.sessionId, string(msgBuf))
-
-				// test reponse
-				if string(msgBuf) == "this is a rpc request" {
-					netcore.TcpSend(conn.sessionId, []byte("this is rpc response"))
+			for {
+				var in interface{} = nil
+				codecSize := len(netcore.codecs)
+				for i := codecSize - 1; i >= 0; i-- {
+					codec := netcore.codecs[i]
+					out, bChain, err := codec.Decode(conn, in)
+					if err != nil {
+						bClose = true
+						log.Error("loop read decode msg error:%s, sessionId:%d", err, conn.sessionId)
+						break
+					}
+					if !bChain {
+						break
+					}
+					in = out
 				}
 
-			} else {
-				if conn.rcvBuff.IsFull() {
-					oldCap := conn.rcvBuff.Cap()
-					conn.rcvBuff.Grow(oldCap + oldCap/2)
-					log.Info("loop read grow rcv buffer capcity from %v to %v, sessionId:%v", oldCap, conn.rcvBuff.Cap(), conn.sessionId)
+				if bClose {
+					break
 				}
-				break
+
+				msg := in
+				if msg != nil {
+					//log.Debug("session:%v rcv msg : %v", conn.sessionId, msg)
+					netcore.eventHandler.OnRcvMsg(conn, msg)
+				} else {
+					if conn.rcvBuff.IsFull() {
+						oldCap := conn.rcvBuff.Cap()
+						conn.rcvBuff.Grow(oldCap + oldCap/2)
+						log.Info("loop read grow rcv buffer capcity from %v to %v, sessionId:%v", oldCap, conn.rcvBuff.Cap(), conn.sessionId)
+					}
+					break
+				}
 			}
 		}
 
@@ -283,11 +289,20 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 			timeout := false
 			t := time.NewTimer(time.Millisecond * 100)
 			select {
-			case buff := <-conn.sendChann:
-				err := netcore.codec.Encode(buff, conn.sendBuff)
-				if err != nil {
-					bClose = true
-					log.Error("loop write encode buff error:%s, sessionId:%d", err, conn.sessionId)
+			case msg := <-conn.sendChann:
+				var in interface{} = nil
+				in = msg
+				for _, codec := range netcore.codecs {
+					out, bChain, err := codec.Encode(conn, in)
+					if err != nil {
+						bClose = true
+						log.Error("loop write encode buff error:%s, sessionId:%d", err, conn.sessionId)
+						break
+					}
+					if !bChain {
+						break
+					}
+					in = out
 				}
 			case <-t.C:
 				timeout = true
@@ -487,6 +502,8 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 	}
 	netcore.listener = *listener
 
+	log.Info("netcore start listen %v:%v", host, port)
+
 	go netcore.loopAccept()
 
 	return nil
@@ -507,8 +524,8 @@ func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool
 	return conn, nil
 }
 
-func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
-	if len(buff) <= 0 {
+func (netcore *NetPollCore) TcpSendMsg(sessionId int64, msg interface{}) error {
+	if msg == nil {
 		return nil
 	}
 
@@ -519,7 +536,7 @@ func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 	}
 
 	select {
-	case conn.sendChann <- buff:
+	case conn.sendChann <- msg:
 	default:
 		log.Error("tcp send channel full")
 		return errors.New("send channel full")

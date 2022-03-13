@@ -3,6 +3,7 @@ package app
 import (
 	"common/consts"
 	"common/log"
+	"common/pbmsg"
 	"common/rpc"
 	"fmt"
 	"mockclient/config"
@@ -71,11 +72,19 @@ func (app *App) Start() {
 }
 
 func (app *App) update() {
-	rpc := rpc.CreateRpc()
-	rpc.TargetSvrType = int(consts.ServerTypeGate)
-	rpc.Request = []byte("this is a rpc request")
+	rpcEntry := rpc.CreateRpc()
+	rpcEntry.TargetSvrType = int(consts.ServerTypeGate)
+	req := &pbmsg.LoginGateReqT{}
+	username := "test_name"
+	req.Username = &username
+	passwd := "test_passwd"
+	req.Passwd = &passwd
+	rpcEntry.ReqMsg = &rpc.InnerMessage{
+		Head:  rpc.InnerMessageHead{MsgID: int(pbmsg.MsgID_login_gate_req)},
+		PbMsg: req,
+	}
 
 	log.Debug("begin rpc call")
-	rpc.Call()
-	log.Debug("end rpc call, resp: %v", string(rpc.Response))
+	rpcEntry.Call()
+	log.Debug("end rpc call, resp: %v", rpcEntry.RespMsg)
 }

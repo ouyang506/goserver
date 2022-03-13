@@ -3,9 +3,8 @@ package rpc
 import (
 	"common/log"
 	"common/network"
-	"common/registry"
+	"common/pbmsg"
 	"strconv"
-	"strings"
 	"sync/atomic"
 )
 
@@ -29,16 +28,16 @@ type RpcStub struct {
 	netconnInited int32
 }
 
-func (stub *RpcStub) PushRpc(rpc *Rpc) bool {
+func (stub *RpcStub) pushRpc(rpc *Rpc) bool {
 	if len(stub.pendingRpcQueue) >= RpcQueueMax {
 		return false
 	}
 	stub.pendingRpcQueue = append(stub.pendingRpcQueue, rpc)
-	stub.TrySendRpc()
+	stub.trySendRpc()
 	return true
 }
 
-func (stub *RpcStub) RemoveRpc(callId int64) bool {
+func (stub *RpcStub) removeRpc(callId int64) bool {
 	for i, v := range stub.pendingRpcQueue {
 		if v.CallId == callId {
 			stub.pendingRpcQueue = append(stub.pendingRpcQueue[:i], stub.pendingRpcQueue[i+1:]...)
@@ -48,7 +47,7 @@ func (stub *RpcStub) RemoveRpc(callId int64) bool {
 	return false
 }
 
-func (stub *RpcStub) TrySendRpc() {
+func (stub *RpcStub) trySendRpc() {
 	//初始化netconn进行网络连接
 	if atomic.CompareAndSwapInt32(&stub.netconnInited, 0, 1) {
 		atrrib := map[interface{}]interface{}{}
@@ -69,7 +68,7 @@ func (stub *RpcStub) TrySendRpc() {
 			}
 			rpc := stub.pendingRpcQueue[0]
 			stub.pendingRpcQueue = stub.pendingRpcQueue[1:]
-			err := stub.netcore.TcpSend(netconn.(network.Connection).GetSessionId(), rpc.Request)
+			err := stub.netcore.TcpSendMsg(netconn.(network.Connection).GetSessionId(), rpc.ReqMsg)
 			if err != nil {
 				break
 			}
@@ -77,12 +76,18 @@ func (stub *RpcStub) TrySendRpc() {
 	}
 }
 
-func (stub *RpcStub) Close() {
+func (stub *RpcStub) close() {
 	netconn := stub.netconn.Load()
 	if netconn != nil {
 		connnSessionId := netconn.(network.Connection).GetSessionId()
 		stub.netcore.TcpClose(connnSessionId)
 	}
+}
+
+type RpcStubManger struct {
+	rpcMgr      *RpcManager
+	netcore     network.NetworkCore
+	typeStubMap map[int]*RpcServerTypeStubs
 }
 
 type RpcServerTypeStubs struct {
@@ -91,7 +96,48 @@ type RpcServerTypeStubs struct {
 	router     RpcRouter
 }
 
-func (typeStubs *RpcServerTypeStubs) addStub(stub *RpcStub) bool {
+func newRpcStubManager(rpcMgr *RpcManager) *RpcStubManger {
+	mgr := &RpcStubManger{
+		rpcMgr: rpcMgr,
+	}
+
+	codecs := []network.Codec{}
+	codecs = append(codecs, NewInnerMessageCodec())
+	codecs = append(codecs, network.NewVariableFrameLenCodec())
+
+	mgr.netcore = network.NewNetworkCore(
+		network.WithEventHandler(mgr),
+		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
+		network.WithSocketSendBufferSize(10240),
+		network.WithSocketRcvBufferSize(10240),
+		network.WithSocketTcpNoDelay(true),
+		network.WithFrameCodecs(codecs))
+	mgr.netcore.Start()
+
+	mgr.typeStubMap = map[int]*RpcServerTypeStubs{}
+
+	return mgr
+}
+
+// 添加一个代理管道
+func (mgr *RpcStubManger) addStub(serverType int, instanceId int, remoteIp string, remotePort int) bool {
+	typeStubs, ok := mgr.typeStubMap[serverType]
+	if !ok {
+		typeStubs = &RpcServerTypeStubs{
+			serverType: serverType,
+			router:     newConsistRouter(),
+		}
+		mgr.typeStubMap[serverType] = typeStubs
+	}
+
+	stub := &RpcStub{
+		ServerType: serverType,
+		InstanceID: instanceId,
+		RemoteIP:   remoteIp,
+		RemotePort: remotePort,
+		netcore:    mgr.netcore,
+	}
+
 	index := 0
 	for i, v := range typeStubs.stubs {
 		if v.InstanceID == stub.InstanceID {
@@ -108,116 +154,29 @@ func (typeStubs *RpcServerTypeStubs) addStub(stub *RpcStub) bool {
 
 	log.Debug("add rpc stub [%v:%v][%v:%v]", stub.ServerType, stub.InstanceID, stub.RemoteIP, stub.RemotePort)
 	return true
+
 }
 
-func (typeStubs *RpcServerTypeStubs) delStub(instanceID int) bool {
-	for i, v := range typeStubs.stubs {
-		if v.InstanceID == instanceID {
-			typeStubs.stubs = append(typeStubs.stubs[:i], typeStubs.stubs[i+1:]...)
-			typeStubs.router.DelRoute(strconv.Itoa(instanceID))
-
-			log.Debug("delete rpc stub [%v:%v][%v:%v]", v.ServerType, v.InstanceID, v.RemoteIP, v.RemotePort)
-			return true
-		}
-	}
-	return false
-}
-
-// func (typeStubs *RpcServerTypeStubs) getStub(instanceID int) *RpcStub {
-// 	for _, v := range typeStubs.stubs {
-// 		if v.InstanceID == instanceID {
-// 			return v
-// 		}
-// 	}
-// 	return nil
-// }
-
-type RpcStubManger struct {
-	netcore     network.NetworkCore
-	typeStubMap map[int]*RpcServerTypeStubs
-	registry    *registry.RegistryMgr
-}
-
-func NewRpcStubManager() *RpcStubManger {
-	mgr := &RpcStubManger{}
-
-	mgr.netcore = network.NewNetworkCore(
-		network.WithEventHandler(mgr),
-		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
-		network.WithSocketSendBufferSize(10240),
-		network.WithSocketRcvBufferSize(10240),
-		network.WithSocketTcpNoDelay(true),
-		network.WithFrameCodec(network.NewVariableFrameLenCodec()))
-	mgr.netcore.Start()
-
-	mgr.typeStubMap = map[int]*RpcServerTypeStubs{}
-
-	etcdReg := registry.NewEtcdRegistry(log.GetLogger(), []string{"127.0.0.1:2379"}, "", "")
-	mgr.registry = registry.NewRegistryMgr(log.GetLogger(), etcdReg, mgr.registryCB)
-
-	return mgr
-}
-
-func (mgr *RpcStubManger) registryCB(oper registry.OperType, key string, value string) {
-	serverType := 0
-	instanceID := 0
-	splitKeyArr := strings.SplitN(key, ":", 2)
-	if len(splitKeyArr) >= 2 {
-		serverType, _ = strconv.Atoi(splitKeyArr[0])
-		instanceID, _ = strconv.Atoi(splitKeyArr[1])
-	}
-
-	switch oper {
-	case registry.OperUpdate:
-		{
-			ip := ""
-			port := 0
-			splitValueArr := strings.SplitN(value, ":", 2)
-			if len(splitValueArr) >= 2 {
-				ip = splitKeyArr[0]
-				port, _ = strconv.Atoi(splitKeyArr[1])
-			}
-			if ip == "" || port <= 0 {
-				return
-			}
-			mgr.AddStub(serverType, instanceID, ip, port)
-		}
-	case registry.OperDelete:
-		{
-			mgr.DelStub(serverType, instanceID)
-		}
-	}
-}
-
-func (mgr *RpcStubManger) AddStub(serverType int, instanceId int, remoteIp string, remotePort int) bool {
-	serverTypeStubs, ok := mgr.typeStubMap[serverType]
-	if !ok {
-		serverTypeStubs = &RpcServerTypeStubs{
-			serverType: serverType,
-			router:     newConsistRouter(),
-		}
-		mgr.typeStubMap[serverType] = serverTypeStubs
-	}
-
-	stub := &RpcStub{
-		ServerType: serverType,
-		InstanceID: instanceId,
-		RemoteIP:   remoteIp,
-		RemotePort: remotePort,
-		netcore:    mgr.netcore,
-	}
-	return serverTypeStubs.addStub(stub)
-}
-
-func (mgr *RpcStubManger) DelStub(serverType int, instanceId int) bool {
+// 删除一个代理管道
+func (mgr *RpcStubManger) delStub(serverType int, instanceId int) bool {
 	typeStubs, ok := mgr.typeStubMap[serverType]
 	if ok {
-		return typeStubs.delStub(instanceId)
+		for i, stub := range typeStubs.stubs {
+			if stub.InstanceID == instanceId {
+				typeStubs.stubs = append(typeStubs.stubs[:i], typeStubs.stubs[i+1:]...)
+				typeStubs.router.DelRoute(strconv.Itoa(instanceId))
+				stub.close()
+
+				log.Debug("delete rpc stub [%v:%v][%v:%v]", stub.ServerType, stub.InstanceID, stub.RemoteIP, stub.RemotePort)
+				return true
+			}
+		}
 	}
 	return false
 }
 
-func (mgr *RpcStubManger) FindStub(rpc *Rpc) *RpcStub {
+// 为rpc分配一个stub
+func (mgr *RpcStubManger) selectStub(rpc *Rpc) *RpcStub {
 	typeStubs, ok := mgr.typeStubMap[rpc.TargetSvrType]
 	if !ok {
 		return nil
@@ -247,11 +206,28 @@ func (mgr *RpcStubManger) OnConnect(c network.Connection, err error) {
 		if !ok || stub == nil {
 			return
 		}
-		stub.(*RpcStub).TrySendRpc()
+		stub.(*RpcStub).trySendRpc()
 	}
 }
 
 func (mgr *RpcStubManger) OnClosed(c network.Connection) {
 	peerHost, peerPort := c.GetPeerAddr()
-	log.Info("rpc stub manager OnClosed, peerHost:%v, peerPort:%v", peerHost, peerPort)
+	log.Info("rpc stub manager OnClosed, sessionId : %v, peerHost:%v, peerPort:%v", c.GetSessionId(), peerHost, peerPort)
+}
+
+func (mgr *RpcStubManger) OnRcvMsg(c network.Connection, msg interface{}) {
+	rcvInnerMsg := msg.(*InnerMessage)
+	log.Debug("rpc stub manager OnRcvMsg, sessionId : %v, msg: %+v", c.GetSessionId(), rcvInnerMsg)
+	mgr.rpcMgr.OnRcvResponse(rcvInnerMsg.Head.CallId, rcvInnerMsg)
+
+	// for test response
+	if rcvInnerMsg.Head.MsgID == int(pbmsg.MsgID_login_gate_req) {
+		respInnerMsg := &InnerMessage{}
+		respInnerMsg.Head.MsgID = int(pbmsg.MsgID_login_gate_resp)
+		pb := &pbmsg.LoginGateRespT{}
+		respInnerMsg.PbMsg = pb
+		pb.Result = new(int32)
+		*pb.Result = 8888
+		mgr.netcore.TcpSendMsg(c.GetSessionId(), respInnerMsg)
+	}
 }

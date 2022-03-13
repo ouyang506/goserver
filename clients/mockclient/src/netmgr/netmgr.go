@@ -14,8 +14,9 @@ type NetMgr struct {
 
 func NewNetMgr() *NetMgr {
 	mgr := &NetMgr{}
-	mgr.rpcMgr = rpc.NewRpcManager()
-	rpc.InitRpc(mgr.rpcMgr)
+
+	rpc.InitRpc()
+
 	return mgr
 }
 
@@ -24,8 +25,8 @@ func (mgr *NetMgr) Init(conf *config.Config) {
 }
 
 func (mgr *NetMgr) Start() {
+	rpcMgr := rpc.GetRpcManager()
 	for i, gateInfo := range mgr.conf.Gates.GateInfos {
-		stubMgr := mgr.rpcMgr.GetStubMgr()
-		stubMgr.AddStub(int(consts.ServerTypeGate), i, gateInfo.IP, int(gateInfo.Port))
+		rpcMgr.AddStub(int(consts.ServerTypeGate), i, gateInfo.IP, int(gateInfo.Port))
 	}
 }

@@ -9,7 +9,7 @@ type Options struct {
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
-	codec                Codec
+	codecs               []Codec
 }
 
 func loadOptions(op []Option) *Options {
@@ -65,8 +65,8 @@ func WithSocketTcpNoDelay(tcpNoDelay bool) Option {
 	}
 }
 
-func WithFrameCodec(codec Codec) Option {
+func WithFrameCodecs(codecs []Codec) Option {
 	return func(ops *Options) {
-		ops.codec = codec
+		ops.codecs = codecs
 	}
 }

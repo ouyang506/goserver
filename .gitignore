@@ -9,3 +9,4 @@ software/infra3.etcd
 clients/mockclient/log/
 __debug_bin.exe
 servers/log/
+servers/gateserver/src/gateserver.exe

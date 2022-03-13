@@ -1,7 +1,6 @@
 package network
 
 import (
-	"common/utility/ringbuffer"
 	"errors"
 )
 
@@ -10,30 +9,43 @@ const (
 	MaxFrameLengthSize = 4               // beyond 2M
 )
 
+// codec会放在网络协程中处理，提升性能
+// codec队列由有序数组构成，第一个codec的输出作为第二个codec的输入
+// encode从codec_1 -> codec_2 .. -> codec_N, decode倒序从codec_N -> .. codec_2 -> codec_1
+// encode队列最终将msg->conn.sendbuff，decode最终将conn.rcvbuff->msg
+// bChain返回false时停止该链式过程
 type Codec interface {
-	Encode([]byte, *ringbuffer.RingBuffer) error
-	Decode(*ringbuffer.RingBuffer) ([]byte, error)
+	Encode(c Connection, in interface{}) (out interface{}, bChain bool, err error)
+	Decode(c Connection, in interface{}) (out interface{}, bChain bool, err error)
 }
 
+// MessageFrameLen固定长度解析（4字节)
 type FixedFrameLenCodec struct {
 }
 
+// MessageFrameLen可变长度解析（类utf8编码）
 type VariableFrameLenCodec struct {
 }
 
 func NewVariableFrameLenCodec() *VariableFrameLenCodec {
 	return &VariableFrameLenCodec{}
 }
-func (cc *VariableFrameLenCodec) Encode(buf []byte, ring *ringbuffer.RingBuffer) (err error) {
+
+func (cc *VariableFrameLenCodec) Encode(c Connection, in interface{}) (ignore_out interface{}, bChain bool, err error) {
+	buf := in.([]byte)
+
 	length := len(buf)
 	if length <= 0 {
-		return errors.New("encode tcp frame length error")
+		err = errors.New("encode tcp frame length error")
+		return
 	}
 
 	if length > MaxFrameLength {
-		return errors.New("encode tcp frame length greater than max frame length")
+		err = errors.New("encode tcp frame length greater than max frame length")
+		return
 	}
-
+	ring := c.GetSendBuff()
+	// TODO : need check full ?
 	for {
 		b := byte(length & 0x7F)
 		length = length >> 7
@@ -45,10 +57,13 @@ func (cc *VariableFrameLenCodec) Encode(buf []byte, ring *ringbuffer.RingBuffer)
 		}
 	}
 	ring.Write(buf)
+	bChain = true
 	return
 }
 
-func (cc *VariableFrameLenCodec) Decode(ring *ringbuffer.RingBuffer) (msg []byte, err error) {
+func (cc *VariableFrameLenCodec) Decode(c Connection, in interface{}) (out interface{}, bChain bool, err error) {
+	ring := c.GetRcvBuff()
+
 	head, tail := ring.PeekAll()
 	headLen := len(head)
 	tailLen := len(tail)
@@ -86,25 +101,32 @@ func (cc *VariableFrameLenCodec) Decode(ring *ringbuffer.RingBuffer) (msg []byte
 	}
 
 	if frameLen <= 0 {
-		return nil, nil
+		err = nil
+		bChain = false
+		return
 	}
 
 	frameLengthSize := index + 1
 	if frameLengthSize+frameLen > totalLen {
-		return nil, nil
+		err = nil
+		bChain = false
+		return
 	}
 
+	var content []byte = nil
 	if frameLengthSize+frameLen <= headLen {
-		msg = head[frameLengthSize : frameLengthSize+frameLen]
+		content = head[frameLengthSize : frameLengthSize+frameLen]
 	} else {
 		if frameLengthSize >= headLen {
-			msg = tail[frameLengthSize-headLen : frameLengthSize-headLen+frameLen]
+			content = tail[frameLengthSize-headLen : frameLengthSize-headLen+frameLen]
 		} else {
-			msg = make([]byte, frameLen)
-			copy(msg, head[frameLengthSize:])
-			copy(msg, tail[:frameLen+frameLengthSize-headLen])
+			content = make([]byte, frameLen)
+			copy(content, head[frameLengthSize:])
+			copy(content, tail[:frameLen+frameLengthSize-headLen])
 		}
 	}
 	ring.Discard(frameLengthSize + frameLen)
+	out = content
+	bChain = true
 	return
 }

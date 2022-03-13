@@ -4,10 +4,11 @@ package gateway;
 
 
 message login_gate_req_t{
-
+  optional string username = 1;
+  optional string passwd   = 2;
 }
 
 
 message login_gate_resp_t{
-
+  optional int32 result = 1;
 }

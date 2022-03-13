@@ -4,6 +4,9 @@
 			"path": "common"
 		},
 		{
+			"path": "app"
+		},
+		{
 			"path": "clients\\mockclient"
 		}
 	]

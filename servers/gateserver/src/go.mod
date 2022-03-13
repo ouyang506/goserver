@@ -1,4 +1,4 @@
-module mockclient
+module gateserver
 
 go 1.17
 
@@ -11,5 +11,3 @@ require (
 )
 
 replace common => ../../../common/
-
-replace app => ../../../app/
