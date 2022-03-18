@@ -1,0 +1,9 @@
+go 1.18
+
+use (
+	./app
+	./clients/mockclient/src
+	./common
+	./servers/gameserver/src
+	./servers/gateserver/src
+)

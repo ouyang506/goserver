@@ -1,10 +1,10 @@
 module common
 
-go 1.17
+go 1.18
 
 require (
 	go.etcd.io/etcd/client/v3 v3.5.1
-	golang.org/x/sys v0.0.0-20210908233432-aa78b53d3365
+	golang.org/x/sys v0.0.0-20220317061510-51cd9980dadf
 	google.golang.org/protobuf v1.27.1
 )
 
