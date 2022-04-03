@@ -1,9 +1,7 @@
 package consts
 
-type ServerType int32
-
 const (
-	ServerTypeGate ServerType = 1
-	ServerTypeGame ServerType = 2
-	ServerTypeDB   ServerType = 3
+	ServerTypeGate int = 1
+	ServerTypeGame int = 2
+	ServerTypeDB   int = 3
 )

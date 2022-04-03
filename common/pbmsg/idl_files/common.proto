@@ -9,6 +9,7 @@ enum MsgID{
 	// gateway.proto
 	login_gate_req =  1000;
 	login_gate_resp = 1001;
+	tooltip_notify	= 1002;
 }
 
 message msg_head{

@@ -12,3 +12,7 @@ message login_gate_req_t{
 message login_gate_resp_t{
   optional int32 result = 1;
 }
+
+message tooltip_notify_t{
+  optional string content = 1;
+}

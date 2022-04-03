@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	ErrorAddRpc     = errors.New("add rpc error")
-	ErrorRpcTimeOut = errors.New("rpc time out error")
+	ErrorAddRpc         = errors.New("add rpc error")
+	ErrorRpcTimeOut     = errors.New("rpc time out error")
+	ErrorRpcRespMsgType = errors.New("rpc response msg type error")
 )
 
 // RPC管理器(thread safe)
@@ -76,7 +77,7 @@ func (mgr *RpcManager) AddRpc(rpc *Rpc) bool {
 	}
 	mgr.pendingRpcMap[rpc.CallId] = pendingRpcEntry
 
-	mgr.timerMgr.AddTimer(rpc.Timeout, func() {
+	rpc.WaitTimer = mgr.timerMgr.AddTimer(rpc.Timeout, func() {
 		log.Debug("rpc timeout : CallId : %v", rpc.CallId)
 		mgr.RemoveRpc(rpc.CallId)
 		select {
@@ -125,4 +126,8 @@ func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg interface{}) {
 	}
 
 	pendingRpcEntry.rpcStub.removeRpc(sessionId)
+
+	if pendingRpcEntry.rpc.WaitTimer != nil {
+		mgr.timerMgr.RemoveTimer(pendingRpcEntry.rpc.WaitTimer)
+	}
 }

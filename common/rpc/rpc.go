@@ -1,8 +1,13 @@
 package rpc
 
 import (
+	"strconv"
 	"sync/atomic"
 	"time"
+
+	"common/utility/timer"
+
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -20,6 +25,7 @@ func genNextRpcCallId() int64 {
 
 // 初始化全局rpc管理器
 func InitRpc() {
+	InitMsgMapping()
 	rpcMgr = NewRpcManager()
 }
 
@@ -39,34 +45,64 @@ type Rpc struct {
 	ReqMsg        interface{}   // 请求的msg数据
 	RespMsg       interface{}   // 返回的msg数据
 	RespChan      chan (error)  // 收到对端返回或者超时通知
+	WaitTimer     *timer.Timer  // 定时器
 }
 
-func CreateRpc() *Rpc {
+func createRpc(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) *Rpc {
+	ops := LoadOptions(options...)
+
 	rpc := &Rpc{
 		CallId:   genNextRpcCallId(),
 		RespChan: make(chan error),
 	}
-	if rpc.Timeout <= 0 {
+
+	if ops.RpcTimout > 0 {
+		rpc.Timeout = ops.RpcTimout
+	} else {
 		rpc.Timeout = DefaultRpcTimeout
 	}
+
+	if ops.RouteKey != "" {
+		rpc.RouteKey = ops.RouteKey
+	} else {
+		rpc.RouteKey = strconv.FormatInt(rpc.CallId, 10)
+	}
+
+	rpc.ReqMsg = &InnerMessage{
+		Head:  InnerMessageHead{CallId: rpc.CallId, MsgID: reqMsgId},
+		PbMsg: req,
+	}
+
 	return rpc
 }
 
-func (rpc *Rpc) Call() error {
+// rpc同步调用
+func Call(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) (resp proto.Message, err error) {
+	rpc := createRpc(targetSvrType, reqMsgId, req, options...)
 	ret := rpcMgr.AddRpc(rpc)
 	if !ret {
-		return ErrorAddRpc
+		err = ErrorAddRpc
+		return
 	}
 
-	err := <-rpc.RespChan
+	// wait for rpc response util timeout
+	err = <-rpc.RespChan
 	if err != nil {
-		return err
+		return
 	}
 
-	return nil
+	respInnerMsg, ok := rpc.RespMsg.(*InnerMessage)
+	if !ok {
+		err = ErrorRpcRespMsgType
+		return
+	}
+	resp = respInnerMsg.PbMsg
+	return
 }
 
-func (rpc *Rpc) Notify() error {
+// rpc通知
+func Notify(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) error {
+	rpc := createRpc(targetSvrType, reqMsgId, req, options...)
 	ret := rpcMgr.AddRpc(rpc)
 	if !ret {
 		return ErrorAddRpc

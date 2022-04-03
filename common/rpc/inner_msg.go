@@ -14,7 +14,7 @@ import (
 // 服务器内部协议头
 type InnerMessageHead struct {
 	CallId int64 // keep reponse callid equals to request callid
-	MsgID  int
+	MsgID  int   // 大于0表示rpc请求消息，等于0表示rpc返回的消息
 }
 
 // 服务器内部协议

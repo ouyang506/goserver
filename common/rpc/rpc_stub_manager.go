@@ -3,7 +3,6 @@ package rpc
 import (
 	"common/log"
 	"common/network"
-	"common/pbmsg"
 	"strconv"
 	"sync/atomic"
 )
@@ -76,6 +75,10 @@ func (stub *RpcStub) trySendRpc() {
 	}
 }
 
+func (stub *RpcStub) onConnected() {
+	stub.trySendRpc()
+}
+
 func (stub *RpcStub) close() {
 	netconn := stub.netconn.Load()
 	if netconn != nil {
@@ -101,15 +104,16 @@ func newRpcStubManager(rpcMgr *RpcManager) *RpcStubManger {
 		rpcMgr: rpcMgr,
 	}
 
+	// 初始化网络
 	codecs := []network.Codec{}
 	codecs = append(codecs, NewInnerMessageCodec())
 	codecs = append(codecs, network.NewVariableFrameLenCodec())
 
 	mgr.netcore = network.NewNetworkCore(
-		network.WithEventHandler(mgr),
+		network.WithEventHandler(&RpcNetEvent{rpcMgr: rpcMgr}),
 		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
-		network.WithSocketSendBufferSize(10240),
-		network.WithSocketRcvBufferSize(10240),
+		network.WithSocketSendBufferSize(32*1024),
+		network.WithSocketRcvBufferSize(32*1024),
 		network.WithSocketTcpNoDelay(true),
 		network.WithFrameCodecs(codecs))
 	mgr.netcore.Start()
@@ -148,7 +152,7 @@ func (mgr *RpcStubManger) addStub(serverType int, instanceId int, remoteIp strin
 			break
 		}
 	}
-	// 按照instanceID排序
+	// 按照InstanceID排序
 	typeStubs.stubs = append(typeStubs.stubs[:index], append([]*RpcStub{stub}, typeStubs.stubs[index:]...)...)
 	typeStubs.router.UpdateRoute(strconv.Itoa(stub.InstanceID), stub)
 
@@ -188,47 +192,4 @@ func (mgr *RpcStubManger) selectStub(rpc *Rpc) *RpcStub {
 	}
 
 	return stub.(*RpcStub)
-}
-
-// 网络事件回调
-func (mgr *RpcStubManger) OnAccept(c network.Connection) {
-	peerHost, peerPort := c.GetPeerAddr()
-	log.Info("rpc stub manager OnAccept, peerHost:%v, peerPort:%v", peerHost, peerPort)
-}
-
-func (mgr *RpcStubManger) OnConnect(c network.Connection, err error) {
-	peerHost, peerPort := c.GetPeerAddr()
-	if err != nil {
-		log.Info("rpc stub manager OnConnectFailed, sessionId: %v, peerHost:%v, peerPort:%v", c.GetSessionId(), peerHost, peerPort)
-	} else {
-		log.Info("rpc stub manager OnConnected, sessionId: %v, peerHost:%v, peerPort:%v,", c.GetSessionId(), peerHost, peerPort)
-		stub, ok := c.GetAttrib(AttrRpcStub)
-		if !ok || stub == nil {
-			return
-		}
-		stub.(*RpcStub).trySendRpc()
-	}
-}
-
-func (mgr *RpcStubManger) OnClosed(c network.Connection) {
-	peerHost, peerPort := c.GetPeerAddr()
-	log.Info("rpc stub manager OnClosed, sessionId : %v, peerHost:%v, peerPort:%v", c.GetSessionId(), peerHost, peerPort)
-}
-
-func (mgr *RpcStubManger) OnRcvMsg(c network.Connection, msg interface{}) {
-	rcvInnerMsg := msg.(*InnerMessage)
-	log.Debug("rpc stub manager OnRcvMsg, sessionId : %v, msg: %+v", c.GetSessionId(), rcvInnerMsg)
-	mgr.rpcMgr.OnRcvResponse(rcvInnerMsg.Head.CallId, rcvInnerMsg)
-
-	// for test response
-	if rcvInnerMsg.Head.MsgID == int(pbmsg.MsgID_login_gate_req) {
-		respInnerMsg := &InnerMessage{}
-		respInnerMsg.Head.CallId = rcvInnerMsg.Head.CallId
-		respInnerMsg.Head.MsgID = int(pbmsg.MsgID_login_gate_resp)
-		pb := &pbmsg.LoginGateRespT{}
-		respInnerMsg.PbMsg = pb
-		pb.Result = new(int32)
-		*pb.Result = 8888
-		mgr.netcore.TcpSendMsg(c.GetSessionId(), respInnerMsg)
-	}
 }

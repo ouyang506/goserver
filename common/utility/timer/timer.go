@@ -21,27 +21,27 @@ type Option struct {
 
 type TimerCallBack func()
 
-type TimerNode struct {
+type Timer struct {
 	expire uint64
 	cb     TimerCallBack
-	l      *TimerNodeList
-	pre    *TimerNode
-	next   *TimerNode
+	l      *TimerList
+	pre    *Timer
+	next   *Timer
 }
 
-type TimerNodeList struct {
-	root *TimerNode
+type TimerList struct {
+	root *Timer
 }
 
-func newTimerNodeList() *TimerNodeList {
-	l := &TimerNodeList{}
-	l.root = &TimerNode{}
+func newTimerList() *TimerList {
+	l := &TimerList{}
+	l.root = &Timer{}
 	l.root.next = l.root
 	l.root.pre = l.root
 	return l
 }
 
-func (l *TimerNodeList) addTail(node *TimerNode) {
+func (l *TimerList) addTail(node *Timer) {
 	node.l = l
 	at := l.root.pre
 
@@ -51,7 +51,7 @@ func (l *TimerNodeList) addTail(node *TimerNode) {
 	node.next.pre = node
 }
 
-func (l *TimerNodeList) remove(node *TimerNode) bool {
+func (l *TimerList) remove(node *Timer) bool {
 	if node.l != l {
 		return false
 	}
@@ -65,12 +65,12 @@ func (l *TimerNodeList) remove(node *TimerNode) bool {
 	return true
 }
 
-func (l *TimerNodeList) clear() {
+func (l *TimerList) clear() {
 	l.root.next = l.root
 	l.root.pre = l.root
 }
 
-func (nl *TimerNodeList) forEach(f func(*TimerNode)) {
+func (nl *TimerList) forEach(f func(*Timer)) {
 	if nl.root.next == nl.root {
 		return
 	}
@@ -89,11 +89,11 @@ type TimerWheel struct {
 	layerMaxValue []uint64
 	layerShift    []int
 
-	jiffies      uint64             // since timer wheel start running
-	allNodes     [][]*TimerNodeList // all timer nodes
+	jiffies      uint64         // since timer wheel start running
+	allNodes     [][]*TimerList // all timer nodes
 	lastTickTime int64
 
-	expiredList []*TimerNode
+	expiredList []*Timer
 
 	stopChan chan bool
 }
@@ -121,16 +121,16 @@ func NewTimerWheel(option *Option) *TimerWheel {
 	}
 
 	for i := 0; i < MaxLayer; i++ {
-		layerNodes := make([]*TimerNodeList, tw.layerMasks[i]+1)
+		layerNodes := make([]*TimerList, tw.layerMasks[i]+1)
 		for j := 0; j <= int(tw.layerMasks[i]); j++ {
-			layerNodes[j] = newTimerNodeList()
+			layerNodes[j] = newTimerList()
 		}
 		tw.allNodes = append(tw.allNodes, layerNodes)
 	}
 
 	tw.lastTickTime = time.Now().UnixNano() / int64(tw.timeAccuracy)
 
-	tw.expiredList = []*TimerNode{}
+	tw.expiredList = []*Timer{}
 
 	tw.stopChan = make(chan bool)
 	return tw
@@ -180,7 +180,7 @@ func (tw *TimerWheel) TickElapsed(elaspeTime time.Duration) {
 	}
 }
 
-func (tw *TimerWheel) AddTimer(duration time.Duration, cb TimerCallBack) *TimerNode {
+func (tw *TimerWheel) AddTimer(duration time.Duration, cb TimerCallBack) *Timer {
 	delta := uint64(duration / tw.timeAccuracy)
 	if delta < 1 {
 		// put it to the next root slot if expired now
@@ -195,7 +195,7 @@ func (tw *TimerWheel) AddTimer(duration time.Duration, cb TimerCallBack) *TimerN
 	}
 
 	expire := tw.jiffies + delta
-	node := &TimerNode{
+	node := &Timer{
 		expire: expire,
 		cb:     cb,
 	}
@@ -206,7 +206,7 @@ func (tw *TimerWheel) AddTimer(duration time.Duration, cb TimerCallBack) *TimerN
 	return node
 }
 
-func (tw *TimerWheel) RemoveTimer(n *TimerNode) (ret bool) {
+func (tw *TimerWheel) RemoveTimer(n *Timer) (ret bool) {
 	tw.mutex.Lock()
 
 	if n.l != nil {
@@ -217,7 +217,7 @@ func (tw *TimerWheel) RemoveTimer(n *TimerNode) (ret bool) {
 	return
 }
 
-func (tw *TimerWheel) After(duration time.Duration) (chan bool, *TimerNode) {
+func (tw *TimerWheel) After(duration time.Duration) (chan bool, *Timer) {
 	ch := make(chan bool)
 	node := tw.AddTimer(duration, func() {
 		select {
@@ -228,7 +228,7 @@ func (tw *TimerWheel) After(duration time.Duration) (chan bool, *TimerNode) {
 	return ch, node
 }
 
-func (tw *TimerWheel) addNode(node *TimerNode) {
+func (tw *TimerWheel) addNode(node *Timer) {
 	delta := node.expire - tw.jiffies
 	for i := 0; i < MaxLayer; i++ {
 		if delta < tw.layerMaxValue[i] {
@@ -245,7 +245,7 @@ func (tw *TimerWheel) cascade(layer int) {
 	nodeList := tw.allNodes[layer][idx]
 	tw.allNodes[layer][idx].clear()
 
-	nodeList.forEach(func(node *TimerNode) {
+	nodeList.forEach(func(node *Timer) {
 		tw.addNode(node)
 	})
 
@@ -269,7 +269,7 @@ func (tw *TimerWheel) doTick(delta int) {
 
 		expireList := tw.allNodes[0][rootIdx]
 		tw.expiredList = tw.expiredList[:0]
-		expireList.forEach(func(n *TimerNode) {
+		expireList.forEach(func(n *Timer) {
 			tw.expiredList = append(tw.expiredList, n)
 		})
 
