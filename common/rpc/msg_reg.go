@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"common/log"
 	"common/pbmsg"
 	"reflect"
 
@@ -8,15 +9,10 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-//type MsgHandler func(req proto.Message, resp proto.Message)
-type MsgHandler struct {
-	method reflect.Method
-}
-
 var (
 	allMsg        map[int]protoreflect.Message // msgId -> msg反射类
 	msgIdMap      map[int]int                  // 请求msgID->返回msgID
-	msgHandlerMap map[int]reflect.Value        // 请求msgID->处理函数
+	msgHandlerMap map[int]*reflect.Value       // 请求msgID->处理函数
 )
 
 // 程序启动时注册，非线程安全
@@ -27,7 +23,16 @@ func InitMsgMapping() {
 
 // 程序启动时注册，非线程安全
 func RegMsgHandler(reqMsgID pbmsg.MsgID, handleFunc interface{}) {
-	msgHandlerMap[int(reqMsgID)] = reflect.ValueOf(handleFunc)
+	f := reflect.ValueOf(handleFunc)
+	if f.Kind() != reflect.Func {
+		log.Error("handleFunc is not a function type.")
+		return
+	}
+
+	if msgHandlerMap == nil {
+		msgHandlerMap = make(map[int]*reflect.Value)
+	}
+	msgHandlerMap[int(reqMsgID)] = &f
 }
 
 // 注册协议映射和处理函数
@@ -48,9 +53,15 @@ func RegProtoMsgMapping(reqMsgId pbmsg.MsgID, reqMsg proto.Message, respMsgId pb
 		}
 	}
 
+	if allMsg == nil {
+		allMsg = make(map[int]protoreflect.Message)
+	}
 	allMsg[int(reqMsgId)] = reqRelect
 	allMsg[int(respMsgId)] = respRelect
 
+	if msgIdMap == nil {
+		msgIdMap = make(map[int]int)
+	}
 	if reqMsgId > 0 && respMsgId > 0 {
 		msgIdMap[int(reqMsgId)] = int(respMsgId)
 	}
@@ -59,6 +70,10 @@ func RegProtoMsgMapping(reqMsgId pbmsg.MsgID, reqMsg proto.Message, respMsgId pb
 // 通过msgID创建msg
 // TODO : 此处需要一个pool缓存
 func GetProtoMsgById(msgId int) proto.Message {
+	if allMsg == nil {
+		return nil
+	}
+
 	msgRelect, ok := allMsg[msgId]
 	if !ok {
 		return nil
@@ -68,10 +83,14 @@ func GetProtoMsgById(msgId int) proto.Message {
 }
 
 // 通过请求msgID获取处理函数
-func GetProtoMsgHandler(msgId int) reflect.Value {
+func GetProtoMsgHandler(msgId int) *reflect.Value {
+	if msgHandlerMap == nil {
+		return nil
+	}
+
 	handler, ok := msgHandlerMap[msgId]
 	if !ok {
-		return reflect.Value{}
+		return nil
 	}
 	return handler
 }

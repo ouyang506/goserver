@@ -52,8 +52,9 @@ func createRpc(targetSvrType int, reqMsgId int, req proto.Message, options ...Op
 	ops := LoadOptions(options...)
 
 	rpc := &Rpc{
-		CallId:   genNextRpcCallId(),
-		RespChan: make(chan error),
+		CallId:        genNextRpcCallId(),
+		TargetSvrType: targetSvrType,
+		RespChan:      make(chan error),
 	}
 
 	if ops.RpcTimout > 0 {

@@ -12,4 +12,3 @@ require (
 
 replace common => ../../../common/
 
-replace app => ../../../app/
