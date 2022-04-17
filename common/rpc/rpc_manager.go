@@ -6,6 +6,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -37,7 +39,7 @@ func NewRpcManager() *RpcManager {
 	return mgr
 }
 
-// 添加一个代理管道
+// 添加一个代理管道(注册中心调用)
 func (mgr *RpcManager) AddStub(serverType int, instanceId int, remoteIp string, remotePort int) bool {
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
@@ -45,7 +47,7 @@ func (mgr *RpcManager) AddStub(serverType int, instanceId int, remoteIp string, 
 	return mgr.rpcStubMgr.addStub(serverType, instanceId, remoteIp, remotePort)
 }
 
-// 删除一个代理管道
+// 删除一个代理管道(注册中心调用)
 func (mgr *RpcManager) DelStub(serverType int, instanceId int) bool {
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
@@ -53,22 +55,36 @@ func (mgr *RpcManager) DelStub(serverType int, instanceId int) bool {
 	return mgr.rpcStubMgr.delStub(serverType, instanceId)
 }
 
+// 添加一个rpc到管理器
 func (mgr *RpcManager) AddRpc(rpc *Rpc) bool {
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	if rpc.CallId == 0 {
-		rpc.CallId = genNextRpcCallId()
-	}
-
-	rpcStub := mgr.rpcStubMgr.selectStub(rpc)
-	if rpcStub == nil {
+	var rpcStub *RpcStub = nil
+	if rpc.TargetSvrType <= 0 {
+		log.Error("target server type error, TargetSvrType : %v", rpc.TargetSvrType)
 		return false
 	}
+
+	if rpc.TargetSvrInstId > 0 {
+		rpcStub = mgr.rpcStubMgr.findStub(rpc.TargetSvrType, rpc.TargetSvrInstId)
+	} else {
+		rpcStub = mgr.rpcStubMgr.selectStub(rpc)
+	}
+	if rpcStub == nil {
+		log.Error("cannot find rpc stub, serverType : %v, instId : %v", rpc.TargetSvrType, rpc.TargetSvrInstId)
+		return false
+	}
+
 	ret := rpcStub.pushRpc(rpc)
 	if !ret {
 		log.Error("push rpc error, callId : %v", rpc.CallId)
 		return false
+	}
+
+	// not need waiting response
+	if rpc.IsOneway {
+		return true
 	}
 
 	pendingRpcEntry := &PendingRpcEntry{
@@ -83,6 +99,10 @@ func (mgr *RpcManager) AddRpc(rpc *Rpc) bool {
 		select {
 		case rpc.RespChan <- ErrorRpcTimeOut:
 		default:
+		}
+		// 异步调用回调
+		if rpc.IsAsync && rpc.Callback != nil {
+			rpc.Callback(ErrorRpcTimeOut, nil)
 		}
 	})
 
@@ -130,4 +150,28 @@ func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg interface{}) {
 	if pendingRpcEntry.rpc.WaitTimer != nil {
 		mgr.timerMgr.RemoveTimer(pendingRpcEntry.rpc.WaitTimer)
 	}
+
+	// 异步rpc回调
+	if pendingRpcEntry.rpc.IsAsync && pendingRpcEntry.rpc.Callback != nil {
+		respInnerMsg, ok := respMsg.(*InnerMessage)
+		if !ok {
+			pendingRpcEntry.rpc.Callback(ErrorRpcRespMsgType, nil)
+			return
+		}
+		pendingRpcEntry.rpc.Callback(nil, respInnerMsg)
+	}
+}
+
+// 通过网络连接的sessionId发送消息
+func (mgr *RpcManager) SendMsgByConnId(connSessionId int64, msgId int, msg proto.Message) error {
+	innerMsg := &InnerMessage{
+		Head:  InnerMessageHead{CallId: genNextRpcCallId(), MsgID: msgId},
+		PbMsg: msg,
+	}
+
+	err := rpcMgr.rpcStubMgr.netcore.TcpSendMsg(connSessionId, innerMsg)
+	if err != nil {
+		return err
+	}
+	return nil
 }

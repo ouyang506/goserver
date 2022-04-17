@@ -179,6 +179,19 @@ func (mgr *RpcStubManger) delStub(serverType int, instanceId int) bool {
 	return false
 }
 
+// 查询代理管道
+func (mgr *RpcStubManger) findStub(serverType int, instanceId int) *RpcStub {
+	typeStubs, ok := mgr.typeStubMap[serverType]
+	if ok {
+		for _, stub := range typeStubs.stubs {
+			if stub.InstanceID == instanceId {
+				return stub
+			}
+		}
+	}
+	return nil
+}
+
 // 为rpc分配一个stub
 func (mgr *RpcStubManger) selectStub(rpc *Rpc) *RpcStub {
 	typeStubs, ok := mgr.typeStubMap[rpc.TargetSvrType]

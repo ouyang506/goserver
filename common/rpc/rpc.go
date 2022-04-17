@@ -37,17 +37,27 @@ func GetRpcManager() *RpcManager {
 	return rpcMgr
 }
 
+type RpcCallbackFunc func(err error, respInnerMsg *InnerMessage)
+
 type Rpc struct {
-	CallId        int64         // rpc请求唯一ID
-	Timeout       time.Duration // 超时时间
-	TargetSvrType int           // 目标服务类型
-	RouteKey      string        // 路由key
-	ReqMsg        interface{}   // 请求的msg数据
-	RespMsg       interface{}   // 返回的msg数据
-	RespChan      chan (error)  // 收到对端返回或者超时通知
-	WaitTimer     *timer.Timer  // 定时器
+	CallId          int64  // rpc请求唯一ID
+	TargetSvrType   int    // 目标服务类型
+	TargetSvrInstId int    // 目标服务实例id
+	RouteKey        string // 路由key
+	IsOneway        bool   // 是否单向通知
+
+	IsAsync  bool            // 是否是异步调用
+	Callback RpcCallbackFunc // 异步调用回调函数
+
+	Timeout   time.Duration // 超时时间
+	WaitTimer *timer.Timer  // 超时定时器
+
+	ReqMsg   interface{}  // 请求的msg数据
+	RespMsg  interface{}  // 返回的msg数据
+	RespChan chan (error) // 收到对端返回或者超时通知
 }
 
+// 创建一个rpc
 func createRpc(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) *Rpc {
 	ops := LoadOptions(options...)
 
@@ -101,12 +111,56 @@ func Call(targetSvrType int, reqMsgId int, req proto.Message, options ...Option)
 	return
 }
 
+// rpc异步调用
+// callback会在其他协程中调用，不要阻塞
+func AsyncCall(targetSvrType int, reqMsgId int, req proto.Message,
+	callback RpcCallbackFunc, options ...Option) (err error) {
+
+	rpc := createRpc(targetSvrType, reqMsgId, req, options...)
+	rpc.IsAsync = true
+	rpc.Callback = callback
+	ret := rpcMgr.AddRpc(rpc)
+	if !ret {
+		err = ErrorAddRpc
+		return
+	}
+	return
+}
+
 // rpc通知
 func Notify(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) error {
 	rpc := createRpc(targetSvrType, reqMsgId, req, options...)
+	rpc.IsOneway = true
 	ret := rpcMgr.AddRpc(rpc)
 	if !ret {
 		return ErrorAddRpc
 	}
 	return nil
+}
+
+// 广播
+func BroadcastMsg(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) error {
+
+	return nil
+}
+
+// // 转发消息
+// func TransferMsg(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) error {
+// 	return Notify(targetSvrType, reqMsgId, req, options...)
+// }
+
+// 发送消息给指定服务实例
+func SendMsgToServer(targetSvrType int, targetSvrInstId int, msgId int, req proto.Message, options ...Option) error {
+	rpc := createRpc(targetSvrType, msgId, req, options...)
+	rpc.TargetSvrInstId = targetSvrInstId
+	ret := rpcMgr.AddRpc(rpc)
+	if !ret {
+		return ErrorAddRpc
+	}
+	return nil
+}
+
+// 通过网络连接的sessionId发送消息
+func SendMsgByConnId(connSessionId int64, msgId int, msg proto.Message) error {
+	return GetRpcManager().SendMsgByConnId(connSessionId, msgId, msg)
 }
