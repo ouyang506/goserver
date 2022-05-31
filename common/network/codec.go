@@ -122,7 +122,7 @@ func (cc *VariableFrameLenCodec) Decode(c Connection, in interface{}) (out inter
 		} else {
 			content = make([]byte, frameLen)
 			copy(content, head[frameLengthSize:])
-			copy(content, tail[:frameLen+frameLengthSize-headLen])
+			copy(content[headLen-frameLengthSize:], tail[:frameLen+frameLengthSize-headLen])
 		}
 	}
 	ring.Discard(frameLengthSize + frameLen)
