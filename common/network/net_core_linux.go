@@ -32,14 +32,12 @@ func NewNetConn(sendBuffSize int, rcvBuffSize int) *NetConn {
 
 // NetPollCore implements the NetworkCore interface
 type NetPollCore struct {
-	logger log.Logger
-
 	numLoops             int
 	loadBalance          LoadBalance
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
-	codec                Codec
+	codecs               []Codec
 
 	polls      []*Poll
 	acceptPoll *Poll
@@ -59,20 +57,26 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 
 	netcore := &NetPollCore{}
 	netcore.numLoops = options.numLoops
-	netcore.logger = options.logger
 	netcore.loadBalance = options.loadBalance
 	netcore.eventHandler = options.eventHandler
 	netcore.socketSendBufferSize = options.socketSendBufferSize
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.socketTcpNoDelay = options.socketTcpNoDelay
-	netcore.codec = options.codec
-	netcore.startLoop()
+	netcore.codecs = options.codecs
 
 	netcore.waitConnMap = sync.Map{}
 	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)
-	netcore.startWaitConnTimer()
 
 	return netcore
+}
+
+func (netcore *NetPollCore) Start() {
+	netcore.startLoop()
+	netcore.startWaitConnTimer()
+}
+
+func (netcore *NetPollCore) Stop() {
+
 }
 
 // NetPollCore loop
@@ -83,20 +87,19 @@ func (netcore *NetPollCore) startLoop() error {
 	for i := 0; i < netcore.numLoops+1; i++ {
 		pollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 		if err != nil {
-			netcore.logger.LogError("EpollCreate1 error : %v", err)
+			log.Error("EpollCreate1 error : %v", err)
 			return err
 		}
 
 		poll := NewNetPoll()
 		poll.pollIndex = i
 		poll.netcore = netcore
-		poll.logger = netcore.logger
 		poll.eventHandler = netcore.eventHandler
 		poll.pollFd = pollFd
 
 		poll.wakeFd, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
 		if err != nil {
-			netcore.logger.LogError("create Eventfd error : %v", err)
+			log.Error("create Eventfd error : %v", err)
 			return err
 		}
 		poll.wfdBuf = make([]byte, 8)
@@ -124,7 +127,7 @@ func (netcore *NetPollCore) startLoop() error {
 		}(netcore.polls[i])
 	}
 
-	netcore.logger.LogInfo("netcore start loop, acceptPollFd: %v, numLoops: %v, pollFds: %+v, wakeFds: %+v",
+	log.Info("netcore start loop, acceptPollFd: %v, numLoops: %v, pollFds: %+v, wakeFds: %+v",
 		netcore.acceptPoll.pollFd, netcore.numLoops, pollFds, wakeFds)
 	return nil
 }
@@ -159,10 +162,10 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 			err := poll.tcpConnect(conn)
 			if err != nil {
 				if err != unix.EINPROGRESS {
-					poll.logger.LogError("tcp connect error, peerHost:%v, peerPort:%v, error : %s", conn.peerHost, conn.peerPort, err)
+					log.Error("tcp connect error, peerHost:%v, peerPort:%v, error : %s", conn.peerHost, conn.peerPort, err)
 				}
 			} else {
-				poll.logger.LogInfo("tcp connect success, peerHost:%v, peerPort:%v", conn.peerHost, conn.peerPort)
+				log.Info("tcp connect success, peerHost:%v, peerPort:%v", conn.peerHost, conn.peerPort)
 			}
 			return err
 		}
@@ -193,9 +196,9 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 
 		listenFd, err := poll.tcpListen(host, port)
 		if err != nil {
-			poll.logger.LogError("tcp listen at %v:%v error : %s", host, port, err)
+			log.Error("tcp listen at %v:%v error : %s", host, port, err)
 		} else {
-			poll.logger.LogInfo("start tcp listen at %v:%v, fd:%v", host, port, listenFd)
+			log.Info("start tcp listen at %v:%v, fd:%v", host, port, listenFd)
 		}
 		return err
 	}
@@ -223,21 +226,21 @@ func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool
 	return conn, nil
 }
 
-// implement network core TcpSend
-func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
+// implement network core TcpSendMsg
+func (netcore *NetPollCore) TcpSendMsg(sessionId int64, msg interface{}) error {
 	pollIndex := netcore.loadBalance.GetConnection(sessionId)
 	if pollIndex < 0 {
-		netcore.logger.LogError("TcpSend connection poll not found, sessionId:%v", sessionId)
+		log.Error("TcpSendMsg connection poll not found, sessionId:%v", sessionId)
 		return errors.New("connection poll not found")
 	}
 	poll := netcore.polls[pollIndex]
-	param := []interface{}{poll, sessionId, buff}
+	param := []interface{}{poll, sessionId, msg}
 	taskFunc := func(param interface{}) error {
 		poll := param.([]interface{})[0].(*Poll)
 		sessionId := param.([]interface{})[1].(int64)
-		buff := param.([]interface{})[2].([]byte)
+		msg := param.([]interface{})[2]
 
-		err := poll.TcpSend(sessionId, buff)
+		err := poll.TcpSendMsg(sessionId, msg)
 		return err
 	}
 	task := NewEventTask(taskFunc, param)
@@ -249,7 +252,7 @@ func (netcore *NetPollCore) TcpSend(sessionId int64, buff []byte) error {
 func (netcore *NetPollCore) TcpClose(sessionId int64) error {
 	pollIndex := netcore.loadBalance.GetConnection(sessionId)
 	if pollIndex < 0 {
-		netcore.logger.LogError("TcpClose connection poll not found, sessionId:%v", sessionId)
+		log.Error("TcpClose connection poll not found, sessionId:%v", sessionId)
 		return errors.New("connection poll not found")
 	}
 	poll := netcore.polls[pollIndex]
@@ -295,17 +298,17 @@ func NewNetPoll() *Poll {
 }
 
 func (poll *Poll) tcpListen(host string, port int) (int, error) {
-	poll.logger.LogDebug("poll tcp listen called , pollFd : %v", poll.pollFd)
+	log.Debug("poll tcp listen called , pollFd : %v", poll.pollFd)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
-		poll.logger.LogError("tcpListen ResolveTCPAddr error : %v", err)
+		log.Error("tcpListen ResolveTCPAddr error : %v", err)
 		return 0, err
 	}
 
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
 	if err != nil {
-		poll.logger.LogError("tcpListen create socket error : %v", err)
+		log.Error("tcpListen create socket error : %v", err)
 		return 0, err
 	}
 
@@ -320,19 +323,19 @@ func (poll *Poll) tcpListen(host string, port int) (int, error) {
 
 	err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)
 	if err != nil {
-		poll.logger.LogError("tcpListen set reuse addr error : %v", err)
+		log.Error("tcpListen set reuse addr error : %v", err)
 		return 0, err
 	}
 
 	err = unix.Bind(fd, sa4)
 	if err != nil {
-		poll.logger.LogError("tcpListen bind error : %v", err)
+		log.Error("tcpListen bind error : %v", err)
 		return 0, err
 	}
 
 	err = unix.Listen(fd, unix.SOMAXCONN)
 	if err != nil {
-		poll.logger.LogError("tcpListen listen error : %v", err)
+		log.Error("tcpListen listen error : %v", err)
 		return 0, err
 	}
 
@@ -341,14 +344,14 @@ func (poll *Poll) tcpListen(host string, port int) (int, error) {
 	// set listen fd nonblock
 	err = unix.SetNonblock(fd, true)
 	if err != nil {
-		poll.logger.LogError("tcpListen set nonblock error : %v", err)
+		log.Error("tcpListen set nonblock error : %v", err)
 		return 0, err
 	}
 
 	// add listen fd to epoll
 	err = poll.addRead(fd)
 	if err != nil {
-		poll.logger.LogError("tcpListen add read error : %v", err)
+		log.Error("tcpListen add read error : %v", err)
 		return 0, err
 	}
 
@@ -373,20 +376,20 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", conn.peerHost, conn.peerPort))
 	if err != nil {
-		poll.logger.LogError("tcpConnect ResolveTCPAddr error : %v", err)
+		log.Error("tcpConnect ResolveTCPAddr error : %v", err)
 		return err
 	}
 
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
 	if err != nil {
-		poll.logger.LogError("tcpConnect create socket error : %v", err)
+		log.Error("tcpConnect create socket error : %v", err)
 		return err
 	}
 
 	if poll.netcore.socketSendBufferSize > 0 {
 		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketSendBufferSize)
 		if err != nil {
-			poll.logger.LogError("tcpConnect set socket send buffer size option error: %v", err)
+			log.Error("tcpConnect set socket send buffer size option error: %v", err)
 			return err
 		}
 	}
@@ -394,7 +397,7 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 	if poll.netcore.socketRcvBufferSize > 0 {
 		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketRcvBufferSize)
 		if err != nil {
-			poll.logger.LogError("tcpConnect set socket rcv buffer size option error: %v", err)
+			log.Error("tcpConnect set socket rcv buffer size option error: %v", err)
 			return err
 		}
 	}
@@ -405,7 +408,7 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 	}
 	err = unix.SetsockoptInt(fd, unix.IPPROTO_TCP, unix.TCP_NODELAY, tcpNodelay)
 	if err != nil {
-		poll.logger.LogError("tcpConnect set socket tcp_nodelay option error: %v", err)
+		log.Error("tcpConnect set socket tcp_nodelay option error: %v", err)
 		return err
 	}
 
@@ -428,13 +431,13 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 	err = unix.Connect(fd, sa4)
 	if err != nil {
 		if err == unix.EINPROGRESS {
-			poll.logger.LogInfo("tcpConnect connect peer endpoint in progress, peerHost:%v, peerPort:%v, fd:%v",
+			log.Info("tcpConnect connect peer endpoint in progress, peerHost:%v, peerPort:%v, fd:%v",
 				conn.peerHost, conn.peerPort, conn.fd)
 			conn.state = int32(ConnStateConnecting)
 			poll.addReadWrite(fd)
 			return err
 		}
-		poll.logger.LogError("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, conn.peerHost, conn.peerPort)
+		log.Error("tcpConnect connect peer endpoint error : %v, peerHost:%v, peerPort:%v", err, conn.peerHost, conn.peerPort)
 		return err
 	}
 
@@ -448,8 +451,8 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 	return nil
 }
 
-func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
-	if len(buff) <= 0 {
+func (poll *Poll) TcpSendMsg(sessionId int64, msg interface{}) error {
+	if msg == nil {
 		return nil
 	}
 
@@ -461,12 +464,21 @@ func (poll *Poll) TcpSend(sessionId int64, buff []byte) error {
 		return errors.New("connection closed")
 	}
 
-	err := poll.netcore.codec.Encode(buff, c.sendBuff)
-	if err != nil {
-		poll.logger.LogError("TcpSend encode buff error:%s", err)
-		poll.close(c.fd)
-		return err
+	var in interface{} = nil
+	in = msg
+	for _, codec := range poll.netcore.codecs {
+		out, bChain, err := codec.Encode(c, in)
+		if err != nil {
+			log.Error("TcpSendMsg encode buff error:%s, sessionId:%d", err, c.sessionId)
+			poll.close(c.fd)
+			return err
+		}
+		if !bChain {
+			break
+		}
+		in = out
 	}
+
 	return poll.loopWrite(c.fd) //TODO:会多一次event_mod
 }
 
@@ -477,14 +489,14 @@ func (poll *Poll) wake(t *EventTask) error {
 	for {
 		_, err := unix.Write(poll.wakeFd, wakeBytes)
 		if err != nil {
-			poll.logger.LogWarn("poll wake error : %v, %v, %v", err, unix.EINTR, unix.EAGAIN)
+			log.Warn("poll wake error : %v, %v, %v", err, unix.EINTR, unix.EAGAIN)
 			if err == unix.EINTR || err == unix.EAGAIN {
 				continue
 			} else {
 				return err
 			}
 		} else {
-			//poll.logger.LogDebug("send wake event to wakeFd:%v", poll.wakeFd)
+			//log.Debug("send wake event to wakeFd:%v", poll.wakeFd)
 			break
 		}
 	}
@@ -496,7 +508,7 @@ func (poll *Poll) loopEpollWait() error {
 	for {
 		n, err := unix.EpollWait(poll.pollFd, events, 100)
 		if err != nil && err != unix.EINTR {
-			poll.logger.LogError("loop epoll wait error : %v", err)
+			log.Error("loop epoll wait error : %v", err)
 			return err
 		}
 
@@ -504,7 +516,7 @@ func (poll *Poll) loopEpollWait() error {
 			eventFd := int(events[i].Fd)
 			pollEvent := events[i].Events
 
-			// poll.logger.LogDebug("loopEpollWait trigger event, poll: %v, eventfd : %d, events :%v",
+			// log.Debug("loopEpollWait trigger event, poll: %v, eventfd : %d, events :%v",
 			// 	poll.pollIndex, eventFd, pollEvent)
 
 			if eventFd == poll.wakeFd {
@@ -523,13 +535,13 @@ func (poll *Poll) loopEpollWait() error {
 			}
 
 			if pollEvent&unix.EPOLLERR > 0 || pollEvent&unix.EPOLLHUP > 0 {
-				poll.logger.LogInfo("rcv connection epollerr or epollhup event:%v, close the socket:%d", pollEvent, eventFd)
+				log.Info("rcv connection epollerr or epollhup event:%v, close the socket:%d", pollEvent, eventFd)
 				poll.loopError(eventFd)
 				continue
 			}
 
 			if int(pollEvent) & ^int(unix.EPOLLIN) & ^int(unix.EPOLLOUT) > 0 {
-				poll.logger.LogInfo("rcv unexpected event, close the socket : %d, events :%v", eventFd, pollEvent)
+				log.Info("rcv unexpected event, close the socket : %d, events :%v", eventFd, pollEvent)
 				poll.loopError(eventFd)
 				continue
 			}
@@ -551,21 +563,21 @@ func (poll *Poll) loopAccept(fd int) error {
 	nfd, sa, err := unix.Accept(fd)
 	if err != nil {
 		if err == unix.EAGAIN {
-			poll.logger.LogDebug("loopAccept accept return EAGAIN, fd:%d", fd)
+			log.Debug("loopAccept accept return EAGAIN, fd:%d", fd)
 			return nil
 		}
 		return err
 	}
 
 	if err := unix.SetNonblock(nfd, true); err != nil {
-		poll.logger.LogError("loop accept set socket non block option error: %v", err)
+		log.Error("loop accept set socket non block option error: %v", err)
 		return err
 	}
 
 	if poll.netcore.socketSendBufferSize > 0 {
 		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketSendBufferSize)
 		if err != nil {
-			poll.logger.LogError("loop accept set socket send buffer size option error: %v", err)
+			log.Error("loop accept set socket send buffer size option error: %v", err)
 			return err
 		}
 	}
@@ -573,7 +585,7 @@ func (poll *Poll) loopAccept(fd int) error {
 	if poll.netcore.socketRcvBufferSize > 0 {
 		err = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, poll.netcore.socketRcvBufferSize)
 		if err != nil {
-			poll.logger.LogError("loop accept set socket rcv buffer size option error: %v", err)
+			log.Error("loop accept set socket rcv buffer size option error: %v", err)
 			return err
 		}
 	}
@@ -584,7 +596,7 @@ func (poll *Poll) loopAccept(fd int) error {
 	}
 	err = unix.SetsockoptInt(fd, unix.IPPROTO_TCP, unix.TCP_NODELAY, tcpNodelay)
 	if err != nil {
-		poll.logger.LogError("loop accept set socket tcp_nodelay option error: %v", err)
+		log.Error("loop accept set socket tcp_nodelay option error: %v", err)
 		return err
 	}
 
@@ -595,10 +607,10 @@ func (poll *Poll) loopAccept(fd int) error {
 		sa4 := sa.(*unix.SockaddrInet4)
 		peerHost = fmt.Sprintf("%d.%d.%d.%d", int(sa4.Addr[0]), int(sa4.Addr[1]), int(sa4.Addr[2]), int(sa4.Addr[3]))
 		peerPort = sa4.Port
-		poll.logger.LogInfo("accept connection  fd : %d, remote_addr: %v, remote_port :%v",
+		log.Info("accept connection  fd : %d, remote_addr: %v, remote_port :%v",
 			nfd, peerHost, peerPort)
 	default:
-		poll.logger.LogInfo("accept connection  fd : %d, sa : %+v", nfd, sa)
+		log.Info("accept connection  fd : %d, sa : %+v", nfd, sa)
 	}
 
 	// add connection to pool
@@ -610,7 +622,7 @@ func (poll *Poll) loopAccept(fd int) error {
 
 	allocPollIndex := poll.netcore.loadBalance.AllocConnection(conn.sessionId)
 	allocPoll := poll.netcore.polls[allocPollIndex]
-	//poll.logger.LogDebug("alloc accepted connection to poll, sessionId:%v, pollIndex:%v", conn.sessionId, allocPollIndex)
+	//log.Debug("alloc accepted connection to poll, sessionId:%v, pollIndex:%v", conn.sessionId, allocPollIndex)
 
 	param := []interface{}{allocPoll, conn}
 	taskFunc := func(param interface{}) error {
@@ -633,14 +645,14 @@ func (poll *Poll) loopAccept(fd int) error {
 }
 
 func (poll *Poll) loopRead(fd int) error {
-	//poll.logger.LogDebug("connection trigger read event, pollFd:%v, fd:%v", poll.pollFd, fd)
+	//log.Debug("connection trigger read event, pollFd:%v, fd:%v", poll.pollFd, fd)
 	c := poll.getConnectionByFd(fd)
 	if c == nil {
-		poll.logger.LogError("loop read connection not found, fd: %v", fd)
+		log.Error("loop read connection not found, fd: %v", fd)
 		return errors.New("loop read connection not found")
 	}
 
-	bReadFinish := false // case wing buffer full but not read all from socket
+	bReadFinish := false // case ring buffer full but not read all from socket
 	for {
 		head, tail := c.rcvBuff.PeekFreeAll()
 		totalRead := 0
@@ -652,18 +664,18 @@ func (poll *Poll) loopRead(fd int) error {
 			n, err := unix.Read(fd, buff)
 			if err != nil {
 				if err == unix.EAGAIN {
-					poll.logger.LogDebug("loopRead read return EAGAIN, fd:%d", fd)
+					log.Debug("loopRead read return EAGAIN, fd:%d", fd)
 					bReadFinish = true
 					break
 				}
 
-				poll.logger.LogError("connnection read error : %s, force close the socket :%d", err, fd)
+				log.Error("connnection read error : %s, force close the socket :%d", err, fd)
 				poll.close(fd)
 				return fmt.Errorf("connnection read error : %s, fd : %d", err, fd)
 			}
 
 			if n <= 0 {
-				poll.logger.LogError("connnection read error length : %d, force close the socket :%d", n, fd)
+				log.Error("connnection read error length : %d, force close the socket :%d", n, fd)
 				poll.close(fd)
 				return fmt.Errorf("connnection read error length : %d, fd : %d", n, fd)
 			}
@@ -679,17 +691,29 @@ func (poll *Poll) loopRead(fd int) error {
 		if totalRead > 0 {
 			c.rcvBuff.Foward(totalRead)
 			for {
-				msgBuff, err := poll.netcore.codec.Decode(c.rcvBuff)
-				if err != nil {
-					poll.logger.LogError("loop read decode msg error:%s, fd:%d", err, c.fd)
-					poll.close(fd)
-					return err
+				var in interface{} = nil
+				codecSize := len(poll.netcore.codecs)
+				for i := codecSize - 1; i >= 0; i-- {
+					codec := poll.netcore.codecs[i]
+					out, bChain, err := codec.Decode(c, in)
+					if err != nil {
+						log.Error("loop read decode msg error:%s, fd:%d", err, c.fd)
+						poll.close(fd)
+						return err
+					}
+					if !bChain {
+						break
+					}
+					in = out
 				}
 
-				if len(msgBuff) <= 0 {
+				msg := in
+				if msg != nil {
+					//log.Debug("session:%v rcv msg : %v", c.sessionId, msg)
+					poll.netcore.eventHandler.OnRcvMsg(c, msg)
+				} else {
 					break
 				}
-				poll.logger.LogDebug("rcv buffer :%v", string(msgBuff))
 			}
 		}
 
@@ -699,9 +723,10 @@ func (poll *Poll) loopRead(fd int) error {
 			//bReadFinish = true // just try again once
 			oldCap := c.rcvBuff.Cap()
 			c.rcvBuff.Grow(oldCap + oldCap/2)
-			poll.logger.LogInfo("loop read grow rcv buffer capcity from %v to %v, fd:%v", oldCap, c.rcvBuff.Cap(), fd)
+			log.Info("loop read grow rcv buffer capcity from %v to %v, fd:%v", oldCap, c.rcvBuff.Cap(), fd)
 			continue
 		}
+
 	}
 
 	if !c.sendBuff.IsEmpty() {
@@ -713,7 +738,7 @@ func (poll *Poll) loopRead(fd int) error {
 }
 
 func (poll *Poll) loopWrite(fd int) error {
-	//poll.logger.LogDebug("connection trigger write event, pollFd:%v, eventFd:%v", poll.pollFd, fd)
+	//log.Debug("connection trigger write event, pollFd:%v, eventFd:%v", poll.pollFd, fd)
 
 	conn := poll.getConnectionByFd(fd)
 	if conn == nil {
@@ -722,7 +747,7 @@ func (poll *Poll) loopWrite(fd int) error {
 
 	// in process connecting succeed
 	if conn.state == int32(ConnStateConnecting) {
-		poll.logger.LogInfo("connect to peer server success, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
+		log.Info("connect to peer server success, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
 
 		conn.state = int32(ConnStateConnected)
@@ -778,7 +803,7 @@ func (poll *Poll) loopWrite(fd int) error {
 func (poll *Poll) loopError(fd int) {
 	conn := poll.getConnectionByFd(fd)
 	if conn != nil && conn.state == int32(ConnStateConnecting) {
-		poll.logger.LogError("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
+		log.Error("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
 		poll.eventHandler.OnConnect(conn, errors.New("epoll connect to peer server failed"))
 	}
@@ -797,11 +822,11 @@ func (poll *Poll) close(fd int) {
 
 	err := poll.modDetach(fd)
 	if err != nil {
-		poll.logger.LogError("network close socket mod detach from epoll error : %s", err)
+		log.Error("network close socket mod detach from epoll error : %s", err)
 	}
 	err = unix.Close(fd)
 	if err != nil {
-		poll.logger.LogError("network close socket error : %s", err)
+		log.Error("network close socket error : %s", err)
 	}
 
 	poll.removeConnectionByFd(fd)
@@ -818,36 +843,36 @@ func (poll *Poll) close(fd int) {
 func (poll *Poll) addConnection(c *NetConn) {
 	_, ok := poll.connMap[c.sessionId]
 	if ok {
-		poll.logger.LogWarn("add a existed fd to connection map, session_id:%v, fd:%v", c.sessionId, c.fd)
+		log.Warn("add a existed fd to connection map, session_id:%v, fd:%v", c.sessionId, c.fd)
 	}
 	poll.connMap[c.sessionId] = c
 	poll.connFdMap[c.fd] = c
 
-	//poll.logger.LogDebug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
+	//log.Debug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
 }
 
 func (poll *Poll) removeConnection(sessionId int64) {
 	c, ok := poll.connMap[sessionId]
 	if !ok {
-		poll.logger.LogWarn("remome connection not found, sessionId : %v", sessionId)
+		log.Warn("remome connection not found, sessionId : %v", sessionId)
 		return
 	}
 	delete(poll.connMap, c.sessionId)
 	delete(poll.connFdMap, c.fd)
 
-	//poll.logger.LogDebug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
+	//log.Debug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
 }
 
 func (poll *Poll) removeConnectionByFd(fd int) {
 	c, ok := poll.connFdMap[fd]
 	if !ok {
-		poll.logger.LogWarn("remome connection not found, fd : %v", fd)
+		log.Warn("remome connection not found, fd : %v", fd)
 		return
 	}
 	delete(poll.connMap, c.sessionId)
 	delete(poll.connFdMap, c.fd)
 
-	//poll.logger.LogDebug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
+	//log.Debug("poll index:%v, connMap:%+v, connFdMap:%+v", poll.pollIndex, poll.connMap, poll.connFdMap)
 }
 
 func (poll *Poll) getConnection(sessionId int64) *NetConn {
@@ -868,7 +893,7 @@ func (poll *Poll) getConnectionByFd(fd int) *NetConn {
 
 // addReadWrite ...
 func (poll *Poll) addReadWrite(fd int) error {
-	//poll.logger.LogDebug("addReadWrite fd : %v", fd)
+	//log.Debug("addReadWrite fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN | unix.EPOLLOUT,
@@ -877,7 +902,7 @@ func (poll *Poll) addReadWrite(fd int) error {
 
 // addRead ...(listenFd只需要读取数据使用)
 func (poll *Poll) addRead(fd int) error {
-	//poll.logger.LogDebug("addRead fd : %v", fd)
+	//log.Debug("addRead fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLET | unix.EPOLLIN,
@@ -886,7 +911,7 @@ func (poll *Poll) addRead(fd int) error {
 
 // // addWrite ...(用不到,fd任何时候都需要读取数据)
 // func (poll *Poll) addWrite(fd int) error {
-// 	poll.logger.LogDebug("addWrite fd : %v", fd)
+// 	log.Debug("addWrite fd : %v", fd)
 // 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_ADD, fd,
 // 		&unix.EpollEvent{Fd: int32(fd),
 // 			Events: unix.EPOLLET | unix.EPOLLOUT,
@@ -895,7 +920,7 @@ func (poll *Poll) addRead(fd int) error {
 
 // modReadWrite ...
 func (poll *Poll) modReadWrite(fd int) error {
-	//poll.logger.LogDebug("modReadWrite fd : %v", fd)
+	//log.Debug("modReadWrite fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN | unix.EPOLLOUT,
@@ -904,7 +929,7 @@ func (poll *Poll) modReadWrite(fd int) error {
 
 // modRead ...
 func (poll *Poll) modRead(fd int) error {
-	//poll.logger.LogDebug("modRead fd : %v", fd)
+	//log.Debug("modRead fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN,
@@ -913,7 +938,7 @@ func (poll *Poll) modRead(fd int) error {
 
 // // modWrite ...(用不到,fd任何时候都需要读取数据)
 // func (poll *Poll) modWrite(fd int) error {
-// 	poll.logger.LogDebug("modWrite fd : %v", fd)
+// 	log.Debug("modWrite fd : %v", fd)
 // 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_MOD, fd,
 // 		&unix.EpollEvent{Fd: int32(fd),
 // 			Events: unix.EPOLLOUT,
@@ -922,7 +947,7 @@ func (poll *Poll) modRead(fd int) error {
 
 // modDetach ...
 func (poll *Poll) modDetach(fd int) error {
-	//poll.logger.LogDebug("modDetach fd : %v", fd)
+	//log.Debug("modDetach fd : %v", fd)
 	return unix.EpollCtl(poll.pollFd, unix.EPOLL_CTL_DEL, fd,
 		&unix.EpollEvent{Fd: int32(fd),
 			Events: unix.EPOLLIN | unix.EPOLLOUT,
