@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+    <!-- gate监听客户端 -->
+    <outer>
+        <ip>0.0.0.0</ip>
+        <port>5000</port>
+    </outer>
+
+    <!-- 服务注册 -->
+    <registry>
+        <server_type>1</server_type>
+        <instance_id>1</instance_id>
+        <ip>127.0.0.1</ip>
+        <port>5100</port>
+    </registry>
+
+    <!-- gate服务转发消息 -->
+    <transfer_message>
+        <message>
+            <message_id_begin>2000</message_id_begin>
+            <message_id_end>2999</message_id_end>
+            <target_server>2</target_server>
+            <description>transfer to game server</description>
+        </message>
+        <message>
+            <message_id_begin>3000</message_id_begin>
+            <message_id_end>3999</message_id_end>
+            <target_server>3</target_server>
+            <target_server>transfer to relation server</target_server>
+        </message>
+    </transfer_message>
+</root>

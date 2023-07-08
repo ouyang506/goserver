@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "utility"
+		},
+		{
+			"path": "framework"
+		},
+		{
+			"path": "clients\\mockclient"
+		}
+	]
+}

@@ -1,0 +1,7 @@
+syntax = "proto2";
+package ss;
+
+//消息ID定义[范围50000-50999]
+//enum msg_type{
+//
+//}

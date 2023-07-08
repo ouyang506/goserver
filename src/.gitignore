@@ -1,0 +1,7 @@
+.vscode
+vendor
+servers/gate/gate.exe
+software/infra1.etcd
+software/infra2.etcd
+software/infra3.etcd
+__debug_bin.exe

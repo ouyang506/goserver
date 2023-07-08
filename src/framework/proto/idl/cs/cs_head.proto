@@ -1,0 +1,6 @@
+syntax = "proto2";
+package cs;
+
+message cs_msg_head{
+
+}
