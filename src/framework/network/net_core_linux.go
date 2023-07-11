@@ -1,10 +1,9 @@
 package network
 
 import (
-	"framwork/log"
-	"utility/ringbuffer"
 	"errors"
 	"fmt"
+	"framwork/log"
 	"golang.org/x/sys/unix"
 	"net"
 	"runtime"
@@ -12,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+	"utility/ringbuffer"
 )
 
 type NetConn struct {
@@ -46,7 +46,7 @@ type NetPollCore struct {
 	waitConnMap   sync.Map // sessionId->connection
 	waitConnTimer time.Ticker
 
-	eventHandler NetEventHandler
+	eventHandlers []NetEventHandler
 }
 
 func newNetworkCore(opts ...Option) *NetPollCore {
@@ -58,7 +58,7 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore := &NetPollCore{}
 	netcore.numLoops = options.numLoops
 	netcore.loadBalance = options.loadBalance
-	netcore.eventHandler = options.eventHandler
+	netcore.eventHandlers = options.eventHandlers
 	netcore.socketSendBufferSize = options.socketSendBufferSize
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.socketTcpNoDelay = options.socketTcpNoDelay
@@ -94,7 +94,7 @@ func (netcore *NetPollCore) startLoop() error {
 		poll := NewNetPoll()
 		poll.pollIndex = i
 		poll.netcore = netcore
-		poll.eventHandler = netcore.eventHandler
+		poll.eventHandlers = netcore.eventHandlers
 		poll.pollFd = pollFd
 
 		poll.wakeFd, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
@@ -284,7 +284,7 @@ type Poll struct {
 	pollIndex      int
 	netcore        *NetPollCore
 	logger         log.Logger
-	eventHandler   NetEventHandler
+	eventHandlers  []NetEventHandler
 	pollFd         int
 	wakeFd         int
 	wfdBuf         []byte
@@ -445,7 +445,9 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 	conn.state = int32(ConnStateConnected)
 	poll.addConnection(conn)
 	poll.addReadWrite(fd)
-	poll.eventHandler.OnConnect(conn, nil)
+	for _, h := range poll.eventHandlers {
+		h.OnConnect(conn, nil)
+	}
 	poll.netcore.removeWaitConn(conn.sessionId)
 
 	return nil
@@ -634,8 +636,9 @@ func (poll *Poll) loopAccept(fd int) error {
 		if err != nil {
 			return err
 		}
-
-		allocPoll.eventHandler.OnAccept(conn)
+		for _, h := range allocPoll.eventHandler {
+			h.OnAccept(conn)
+		}
 		return err
 	}
 	task := NewEventTask(taskFunc, param)
@@ -710,7 +713,9 @@ func (poll *Poll) loopRead(fd int) error {
 				msg := in
 				if msg != nil {
 					//log.Debug("session:%v rcv msg : %v", c.sessionId, msg)
-					poll.netcore.eventHandler.OnRcvMsg(c, msg)
+					for _, h := range poll.netcore.eventHandlers {
+						h.OnRcvMsg(c, msg)
+					}
 				} else {
 					break
 				}
@@ -752,7 +757,9 @@ func (poll *Poll) loopWrite(fd int) error {
 
 		conn.state = int32(ConnStateConnected)
 		poll.netcore.removeWaitConn(conn.sessionId)
-		poll.eventHandler.OnConnect(conn, nil)
+		for _, h := range poll.eventHandlers {
+			h.OnConnect(conn, nil)
+		}
 	}
 
 	if conn.sendBuff.IsEmpty() {
@@ -805,7 +812,9 @@ func (poll *Poll) loopError(fd int) {
 	if conn != nil && conn.state == int32(ConnStateConnecting) {
 		log.Error("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
-		poll.eventHandler.OnConnect(conn, errors.New("epoll connect to peer server failed"))
+		for _, h := range poll.eventHandlers {
+			h.OnConnect(conn, errors.New("epoll connect to peer server failed"))
+		}
 	}
 
 	poll.close(fd)
@@ -832,7 +841,9 @@ func (poll *Poll) close(fd int) {
 	poll.removeConnectionByFd(fd)
 
 	if isConnected {
-		poll.eventHandler.OnClosed(conn)
+		for _, h := range poll.eventHandlers {
+			h.OnClosed(conn)
+		}
 	}
 
 	if conn.IsClient() && conn.autoReconnect {

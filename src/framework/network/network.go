@@ -15,7 +15,7 @@ func NewNetworkCore(options ...Option) NetworkCore {
 	return newNetworkCore(options...)
 }
 
-/// net connection event handler
+// / net connection event handler
 type NetEventHandler interface {
 	OnAccept(c Connection)
 	OnConnect(c Connection, err error)

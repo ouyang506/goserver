@@ -3,13 +3,20 @@ package pb
 
 import(
 	"framework/proto/pb/cs"
+	"framework/proto/pb/ss"
 )
 
+var CsMsgArray [][]interface{} = [][]interface{}{
+	//cs_gate
+	{int(cs.CsGate_msg_id_req_heart_beat), &cs.ReqHeartBeat{}, &cs.RespHeartBeat{}},
+	{int(cs.CsGate_msg_id_req_login_gate), &cs.ReqLoginGate{}, &cs.RespLoginGate{}},
+	{int(cs.CsGate_msg_id_notify_tooltip), &cs.NotifyTooltip{}},
 
-var CsMsgArray [][4]interface{} = [][4]interface{}{
-	// rpc
-	{1, int(cs.CsGate_msg_id_req_heart_beat), &cs.ReqHeartBeat{}, &cs.RespHeartBeat{}},
-	{1, int(cs.CsGate_msg_id_req_login_gate), &cs.ReqLoginGate{}, &cs.RespLoginGate{}},
-	// rpc notify
-	{0, int(cs.CsGate_msg_id_notify_tooltip), &cs.NotifyTooltip{}, nil},
+	//cs_rank
+	{int(cs.CsRank_msg_id_req_query_rank_info), &cs.ReqQueryRankInfo{}, &cs.RespQueryRankInfo{}},	
+}
+
+var SsMsgArray [][4]interface{} = [][4]interface{}{
+	// ss_rank
+	{int(ss.SsRank_msg_id_req_sync_rank_score), &ss.ReqSyncRankScore{}, &ss.RespSyncRankScore{}},
 }

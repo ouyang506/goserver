@@ -7,10 +7,53 @@
 			"path": "framework"
 		},
 		{
+			"name": "gate",
 			"path": "servers\\gate"
 		},
 		{
+			"name": "mockclient",
 			"path": "clients\\mockclient"
 		}
+	],
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "LaunchGate",
+				"type": "go",
+				"request": "launch",
+				"mode": "auto",
+				"program": "${workspaceRoot:gate}\\main.go",
+				"presentation": {
+					"hidden": true,
+					"group": "",
+					"order": 1
+				}
+			},
+			{
+				"name": "LaunchMockClient",
+				"type": "go",
+				"request": "launch",
+				"mode": "auto",
+				"program": "${workspaceRoot:mockclient}\\main.go",
+				"presentation": {
+					"hidden": true,
+					"group": "",
+					"order": 1
+				}
+			}
+		],
+		"compounds": [
+			{
+					"name": "LaunchAll",
+					"configurations": ["LaunchGate", "LaunchMockClient"],
+					"stopAll": true,
+					"presentation": {
+							"hidden": false,
+							"group": "",
+							"order": 1
+					}					
+			}
 	]
+	}
 }

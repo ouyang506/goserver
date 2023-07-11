@@ -3,75 +3,55 @@ package netmgr
 import (
 	"framework/log"
 	"framework/network"
-	"gate/handler"
-	"reflect"
+	"framework/proto/pb"
+	"framework/rpc"
 
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	ConnAttrPlayer = new(struct{})
-)
-
-type NetEvent struct {
-	netmgr *NetMgr
+// 网络事件回调
+type NetMessageEvent struct {
 }
 
-func NewNetEvent(netmgr *NetMgr) *NetEvent {
-	return &NetEvent{
-		netmgr: netmgr,
-	}
+func NewNetMessageEvent() *NetMessageEvent {
+	return &NetMessageEvent{}
 }
 
-func (e *NetEvent) OnAccept(c network.Connection) {
-	peerHost, peerPort := c.GetPeerAddr()
-	log.Info("NetEvent OnAccept, peerHost:%v, peerPort:%v", peerHost, peerPort)
+func (e *NetMessageEvent) OnAccept(c network.Connection) {
+	//
 }
 
-func (e *NetEvent) OnConnect(c network.Connection, err error) {
-	peerHost, peerPort := c.GetPeerAddr()
-	if err != nil {
-		log.Info("NetEvent OnConnectFailed, sessionId: %v, peerHost:%v, peerPort:%v", c.GetSessionId(), peerHost, peerPort)
-	} else {
-		log.Info("NetEvent OnConnected, sessionId: %v, peerHost:%v, peerPort:%v,", c.GetSessionId(), peerHost, peerPort)
-	}
-	c.SetAttrib(&ConnAttrPlayer, 0)
+func (e *NetMessageEvent) OnConnect(c network.Connection, err error) {
+	//
 }
 
-func (e *NetEvent) OnClosed(c network.Connection) {
-	peerHost, peerPort := c.GetPeerAddr()
-	log.Info("NetEvent OnClosed, sessionId : %v, peerHost:%v, peerPort:%v", c.GetSessionId(), peerHost, peerPort)
-	c.SetAttrib(&ConnAttrPlayer, 0)
+func (e *NetMessageEvent) OnClosed(c network.Connection) {
+	//
 }
 
-func (e *NetEvent) OnRcvMsg(c network.Connection, msg interface{}) {
-	log.Debug("NetEvent OnRcvMsg, sessionId : %v, msg: %+v", c.GetSessionId(), msg)
-
-	rcvOuterMsg := msg.(*OuterMessage)
+func (e *NetMessageEvent) OnRcvMsg(c network.Connection, msg interface{}) {
+	rcvOuterMsg := msg.(*rpc.OuterMessage)
+	log.Debug("NetEvent OnRcvMsg, sessionId : %v, msg: %+v", c.GetSessionId(), rcvOuterMsg)
 
 	msgId := rcvOuterMsg.Head.MsgID
-	if msgId >= 1000 && msgId <= 1999 {
-		//gate handler
+	if msgId > 0 {
 
-		handler := handler.MessageHandler{}
-		method, reqValue, respValue := handler.GetMsgHandlerById(msgId)
-		if method == nil {
-			log.Error("gate handle message func not found, msg id: %d", msgId)
+		log.Debug("handle message, id: %d", msgId)
+		arr, ok := pb.MsgId2Type[msgId]
+		if !ok {
+			// drop the illegal request message
 			return
 		}
+		// req := reflect.New(reflect.TypeOf(arr[0]).Elem())
+		// resp := reflect.New(reflect.TypeOf(arr[1]).Elem())
+		req := arr[0].Interface()
+		proto.Unmarshal(rcvOuterMsg.Content, req)
 
-		req := reqValue.Interface().(proto.Message)
-		err := proto.Unmarshal(rcvOuterMsg.Content, req)
-		if err != nil {
-			log.Error("decode outer message error: %v, msg id: %v", err, msgId)
-			return
-		}
-
-		in := []reflect.Value{reqValue, respValue}
-		method.Call(in)
-
-		// handler := GetProtoMsgHandler(rcvOuterMsg.Head.MsgID)
-
+		// handler := GetProtoMsgHandler(rcvInnerMsg.Head.MsgID)
+		// // if handler.Kind() != reflect.Func {
+		// // 	log.Error("get handler error, msg_id : %v", rcvInnerMsg.Head.MsgID)
+		// // 	return
+		// // }
 		// resp := GetProtoMsgById(rcvInnerMsg.Head.MsgID)
 		// if resp == nil {
 		// 	log.Error("get resp msg error, msg_id : %v", rcvInnerMsg.Head.MsgID)
@@ -80,15 +60,12 @@ func (e *NetEvent) OnRcvMsg(c network.Connection, msg interface{}) {
 		// in := []reflect.Value{reflect.ValueOf(rcvInnerMsg.PbMsg), reflect.ValueOf(resp)}
 		// handler.Call(in)
 
-		respOuterMsg := &OuterMessage{}
-		respOuterMsg.Head.CallId = rcvOuterMsg.Head.CallId
-		respOuterMsg.Head.MsgID = 0
-		respContent, _ := proto.Marshal(respValue.Interface().(proto.Message))
-		respOuterMsg.Content = respContent
+		// respInnerMsg := &InnerMessage{}
+		// respInnerMsg.Head.CallId = rcvInnerMsg.Head.CallId
+		// respInnerMsg.Head.MsgID = 0
+		// respInnerMsg.PbMsg = resp
 
-		e.netmgr.netcore.TcpSendMsg(c.GetSessionId(), respOuterMsg)
+		// e.rpcMgr.rpcStubMgr.netcore.TcpSendMsg(c.GetSessionId(), respInnerMsg)
 
-	} else {
-		// route to backend
 	}
 }

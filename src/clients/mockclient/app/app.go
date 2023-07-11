@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"framework/consts"
 	"framework/log"
 	"framework/proto/pb/cs"
 	"framework/rpc"
@@ -72,12 +71,12 @@ func (app *App) Start() {
 }
 
 func (app *App) update() {
-
 	req := &cs.ReqLoginGate{}
 	req.Token = new(string)
 	*req.Token = "my_token_test"
+	resp := &cs.RespLoginGate{}
 
 	log.Debug("begin rpc call")
-	resp, err := rpc.Call(consts.ServerTypeGate, int(cs.CsGate_msg_id_req_login_gate), req)
+	err := rpc.OuterCall(int(cs.CsGate_msg_id_req_login_gate), req, resp)
 	log.Debug("end rpc call, error: %v, resp: %v", err, resp)
 }

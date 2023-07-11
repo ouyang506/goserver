@@ -1,4 +1,10 @@
 logs/
+
 software/etcd/infra1.etcd
 software/etcd/infra2.etcd
 software/etcd/infra3.etcd
+
+.vscode
+vendor
+__debug_bin*.exe
+src/**/*.exe

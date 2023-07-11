@@ -41,7 +41,7 @@ type NetPollCore struct {
 
 	listener net.TCPListener
 
-	eventHandler         NetEventHandler
+	eventHandlers        []NetEventHandler
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
@@ -58,7 +58,7 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	options := loadOptions(opts)
 	netcore := &NetPollCore{}
 	netcore.ctx, netcore.ctxCancelFn = context.WithCancel(context.Background())
-	netcore.eventHandler = options.eventHandler
+	netcore.eventHandlers = options.eventHandlers
 	netcore.socketSendBufferSize = options.socketSendBufferSize
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.socketTcpNoDelay = options.socketTcpNoDelay
@@ -130,7 +130,9 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		tcpConn, err := dialer.Dial("tcp", endpoint)
 		if err != nil {
 			log.Error("dial tcp error: %v, endpoint: %v", err, endpoint)
-			netcore.eventHandler.OnConnect(conn, err)
+			for _, h := range netcore.eventHandlers {
+				h.OnConnect(conn, err)
+			}
 
 			if conn.autoReconnect {
 				conn.lastTryConTime = t.Unix()
@@ -154,7 +156,9 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		conn.SetConnState(ConnStateConnected)
 		conn.lastTryConTime = 0
 
-		netcore.eventHandler.OnConnect(conn, nil)
+		for _, h := range netcore.eventHandlers {
+			h.OnConnect(conn, nil)
+		}
 
 		netcore.loopEvent(conn)
 	}
@@ -182,7 +186,9 @@ func (netcore *NetPollCore) loopAccept() {
 		}
 
 		netcore.addConnectedConn(conn.sessionId, conn)
-		netcore.eventHandler.OnAccept(conn)
+		for _, h := range netcore.eventHandlers {
+			h.OnAccept(conn)
+		}
 
 		netcore.loopEvent(conn)
 	}
@@ -200,6 +206,7 @@ func (netcore *NetPollCore) loopEvent(conn *NetConn) {
 			netcore.loopWrite(conn)
 			wg.Done()
 		}()
+		wg.Wait()
 		//loop结束重置为初始化状态
 		conn.SetConnState(ConnStateInit)
 	}()
@@ -255,7 +262,9 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 				msg := in
 				if msg != nil {
 					//log.Debug("session:%v rcv msg : %v", conn.sessionId, msg)
-					netcore.eventHandler.OnRcvMsg(conn, msg)
+					for _, h := range netcore.eventHandlers {
+						h.OnRcvMsg(conn, msg)
+					}
 				} else {
 					if conn.rcvBuff.IsFull() {
 						oldCap := conn.rcvBuff.Cap()
@@ -355,7 +364,9 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 func (netcore *NetPollCore) close(conn *NetConn) error {
 	if conn.CompareAndSwapConnState(ConnStateConnected, ConnStateClosed) {
 		conn.tcpConn.Close()
-		netcore.eventHandler.OnClosed(conn)
+		for _, h := range netcore.eventHandlers {
+			h.OnClosed(conn)
+		}
 
 		if !conn.isClient {
 			netcore.removeConnectedConn(conn.sessionId)

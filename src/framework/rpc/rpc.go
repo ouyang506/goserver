@@ -5,65 +5,76 @@ import (
 	"sync/atomic"
 	"time"
 
+	"framework/consts"
+	"framework/network"
 	"utility/timer"
+
+	_ "framework/proto/pb"
 
 	"google.golang.org/protobuf/proto"
 )
 
+type RpcModeType int
+
+const (
+	RpcModeInner RpcModeType = 1 //服务器内部rpc
+	RpcModeOuter RpcModeType = 2 //客户端rpc
+)
+
 var (
-	rpcMgr *RpcManager = nil
+	rpcMgr      *RpcManager = nil
+	outerRpcMgr *RpcManager = nil
 )
 
 var (
 	DefaultRpcTimeout = time.Second * 3
-	nextRpcCallId     = int64(100)
+	nextRpcCallId     = int64(10000)
 )
-
-func genNextRpcCallId() int64 {
-	return atomic.AddInt64(&nextRpcCallId, 1)
-}
-
-// 初始化全局rpc管理器
-func InitRpc() {
-	InitMsgMapping()
-	rpcMgr = NewRpcManager()
-}
-
-func TcpListen(ip string, port int) {
-	rpcMgr.rpcStubMgr.netcore.TcpListen(ip, port)
-}
 
 func GetRpcManager() *RpcManager {
 	return rpcMgr
 }
 
-type RpcCallbackFunc func(err error, respInnerMsg *InnerMessage)
+func GetOuterRpcManager() *RpcManager {
+	return outerRpcMgr
+}
 
-type Rpc struct {
-	CallId          int64  // rpc请求唯一ID
-	TargetSvrType   int    // 目标服务类型
-	TargetSvrInstId int    // 目标服务实例id
-	RouteKey        string // 路由key
-	IsOneway        bool   // 是否单向通知
+func genNextRpcCallId() int64 {
+	return atomic.AddInt64(&nextRpcCallId, 1)
+}
 
-	IsAsync  bool            // 是否是异步调用
-	Callback RpcCallbackFunc // 异步调用回调函数
+// type RpcCallbackFunc func(err error, respInnerMsg *InnerMessage)
+
+type RpcEntry struct {
+	RpcMode         RpcModeType // rpc模式
+	CallId          int64       // rpc请求唯一ID
+	MsgId           int         // 消息ID
+	TargetSvrType   int         // 目标服务类型
+	TargetSvrInstId int         // 目标服务实例id
+	RouteKey        string      // 路由key
+	IsOneway        bool        // 是否单向通知
 
 	Timeout   time.Duration // 超时时间
 	WaitTimer *timer.Timer  // 超时定时器
 
-	ReqMsg   interface{}  // 请求的msg数据
-	RespMsg  interface{}  // 返回的msg数据
-	RespChan chan (error) // 收到对端返回或者超时通知
+	ReqMsg   proto.Message // 请求的msg数据
+	RespMsg  proto.Message // 返回的msg数据
+	RespChan chan (error)  // 收到对端返回或者超时通知
 }
 
 // 创建一个rpc
-func createRpc(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) *Rpc {
+func createRpc(rpcMode RpcModeType, targetSvrType int, reqMsgId int, req proto.Message,
+	resp proto.Message, options ...Option) *RpcEntry {
+
 	ops := LoadOptions(options...)
 
-	rpc := &Rpc{
+	rpc := &RpcEntry{
+		RpcMode:       rpcMode,
 		CallId:        genNextRpcCallId(),
+		MsgId:         reqMsgId,
 		TargetSvrType: targetSvrType,
+		ReqMsg:        req,
+		RespMsg:       resp,
 		RespChan:      make(chan error),
 	}
 
@@ -79,18 +90,21 @@ func createRpc(targetSvrType int, reqMsgId int, req proto.Message, options ...Op
 		rpc.RouteKey = strconv.FormatInt(rpc.CallId, 10)
 	}
 
-	rpc.ReqMsg = &InnerMessage{
-		Head:  InnerMessageHead{CallId: rpc.CallId, MsgID: reqMsgId},
-		PbMsg: req,
-	}
-
 	return rpc
 }
 
 // rpc同步调用
-func Call(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) (resp proto.Message, err error) {
-	rpc := createRpc(targetSvrType, reqMsgId, req, options...)
-	ret := rpcMgr.AddRpc(rpc)
+func doCall(rpcMode RpcModeType, targetSvrType int,
+	reqMsgId int, req proto.Message, resp proto.Message, options ...Option) (err error) {
+
+	rpc := createRpc(rpcMode, targetSvrType, reqMsgId, req, resp, options...)
+	ret := false
+	if rpcMode == RpcModeInner {
+		ret = rpcMgr.AddRpc(rpc)
+	} else {
+		ret = outerRpcMgr.AddRpc(rpc)
+	}
+
 	if !ret {
 		err = ErrorAddRpc
 		return
@@ -102,34 +116,29 @@ func Call(targetSvrType int, reqMsgId int, req proto.Message, options ...Option)
 		return
 	}
 
-	respInnerMsg, ok := rpc.RespMsg.(*InnerMessage)
-	if !ok {
-		err = ErrorRpcRespMsgType
-		return
-	}
-	resp = respInnerMsg.PbMsg
 	return
 }
 
-// rpc异步调用
-// callback会在其他协程中调用，不要阻塞
-func AsyncCall(targetSvrType int, reqMsgId int, req proto.Message,
-	callback RpcCallbackFunc, options ...Option) (err error) {
+// 初始化服务器内部rpc管理器
+func InitRpc(eventHandler network.NetEventHandler) {
+	rpcMgr = NewRpcManager(RpcModeInner, eventHandler)
+}
 
-	rpc := createRpc(targetSvrType, reqMsgId, req, options...)
-	rpc.IsAsync = true
-	rpc.Callback = callback
-	ret := rpcMgr.AddRpc(rpc)
-	if !ret {
-		err = ErrorAddRpc
-		return
-	}
-	return
+// 提供内部监听服务
+func TcpListen(ip string, port int) {
+	rpcMgr.rpcStubMgr.netcore.TcpListen(ip, port)
+}
+
+// rpc同步调用
+func Call(targetSvrType int, reqMsgId int, req proto.Message,
+	resp proto.Message, options ...Option) (err error) {
+	return doCall(RpcModeInner, targetSvrType, reqMsgId, req, resp, options...)
 }
 
 // rpc通知
-func Notify(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) error {
-	rpc := createRpc(targetSvrType, reqMsgId, req, options...)
+func Notify(targetSvrType int, reqMsgId int,
+	req proto.Message, resp proto.Message, options ...Option) error {
+	rpc := createRpc(RpcModeInner, targetSvrType, reqMsgId, req, resp, options...)
 	rpc.IsOneway = true
 	ret := rpcMgr.AddRpc(rpc)
 	if !ret {
@@ -138,29 +147,18 @@ func Notify(targetSvrType int, reqMsgId int, req proto.Message, options ...Optio
 	return nil
 }
 
-// 广播
-func BroadcastMsg(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) error {
-
-	return nil
+// 初始化客户端到服务器rpc管理器
+func InitOuterRpc(eventHandler network.NetEventHandler) {
+	outerRpcMgr = NewRpcManager(RpcModeOuter, eventHandler)
 }
 
-// // 转发消息
-// func TransferMsg(targetSvrType int, reqMsgId int, req proto.Message, options ...Option) error {
-// 	return Notify(targetSvrType, reqMsgId, req, options...)
-// }
-
-// 发送消息给指定服务实例
-func SendMsgToServer(targetSvrType int, targetSvrInstId int, msgId int, req proto.Message, options ...Option) error {
-	rpc := createRpc(targetSvrType, msgId, req, options...)
-	rpc.TargetSvrInstId = targetSvrInstId
-	ret := rpcMgr.AddRpc(rpc)
-	if !ret {
-		return ErrorAddRpc
-	}
-	return nil
+// 提供外部监听服务
+func OuterTcpListen(ip string, port int) {
+	outerRpcMgr.rpcStubMgr.netcore.TcpListen(ip, port)
 }
 
-// 通过网络连接的sessionId发送消息
-func SendMsgByConnId(connSessionId int64, msgId int, msg proto.Message) error {
-	return GetRpcManager().SendMsgByConnId(connSessionId, msgId, msg)
+// 外部rpc同步调用
+func OuterCall(reqMsgId int, req proto.Message, resp proto.Message, options ...Option) (err error) {
+	targetSvrType := consts.ServerTypeGate
+	return doCall(RpcModeOuter, targetSvrType, reqMsgId, req, resp, options...)
 }
