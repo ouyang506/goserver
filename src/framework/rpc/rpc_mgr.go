@@ -1,20 +1,16 @@
 package rpc
 
 import (
-	"errors"
 	"framework/log"
 	"framework/network"
+	"framework/proto/pb"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 	"utility/timer"
 
 	"google.golang.org/protobuf/proto"
-)
-
-var (
-	ErrorAddRpc         = errors.New("add rpc error")
-	ErrorRpcTimeOut     = errors.New("rpc time out error")
-	ErrorRpcRespMsgType = errors.New("rpc response msg type error")
 )
 
 // RPC管理器(thread safe)
@@ -24,6 +20,8 @@ type RpcManager struct {
 
 	pendingRpcMap map[int64]*PendingRpcEntry
 	timerMgr      *timer.TimerWheel
+
+	msgHandleMap map[int]reflect.Value
 }
 
 type PendingRpcEntry struct {
@@ -31,7 +29,9 @@ type PendingRpcEntry struct {
 	rpcStub *RpcStub
 }
 
-func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler) *RpcManager {
+func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler,
+	msgHandler any) *RpcManager {
+
 	mgr := &RpcManager{}
 
 	codecs := []network.Codec{}
@@ -39,7 +39,7 @@ func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler
 
 	switch mode {
 	case RpcModeOuter:
-		codecs = append(codecs, NewOuterMessageCodec())
+		codecs = append(codecs, NewOuterMessageCodec(mgr))
 		codecs = append(codecs, network.NewVariableFrameLenCodec())
 
 		outerEventHandler := NewOuterNetEvent(mgr)
@@ -48,7 +48,7 @@ func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler
 	case RpcModeInner:
 		fallthrough
 	default:
-		codecs = append(codecs, NewInnerMessageCodec())
+		codecs = append(codecs, NewInnerMessageCodec(mgr))
 		codecs = append(codecs, network.NewVariableFrameLenCodec())
 
 		innerEventHandler := NewInnerNetEvent(mgr)
@@ -60,6 +60,8 @@ func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler
 	mgr.pendingRpcMap = map[int64]*PendingRpcEntry{}
 	mgr.timerMgr = timer.NewTimerWheel(&timer.Option{TimeAccuracy: time.Millisecond * 200})
 	mgr.timerMgr.Start()
+
+	mgr.SetMsgHandler(msgHandler)
 	return mgr
 }
 
@@ -149,8 +151,19 @@ func (mgr *RpcManager) RemoveRpc(sessionId int64) bool {
 	return true
 }
 
+// 通过callId获取rpc信息
+func (mgr *RpcManager) GetRpc(callId int64) *RpcEntry {
+	mgr.mutex.Lock()
+	defer mgr.mutex.Unlock()
+	pending, ok := mgr.pendingRpcMap[callId]
+	if !ok {
+		return nil
+	}
+	return pending.rpc
+}
+
 // 收到rpc返回后回调
-func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg interface{}) {
+func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg proto.Message) {
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
@@ -159,7 +172,7 @@ func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg interface{}) {
 		return
 	}
 
-	pendingRpcEntry.rpc.RespMsg = respMsg.(proto.Message)
+	pendingRpcEntry.rpc.RespMsg = respMsg
 	select {
 	case pendingRpcEntry.rpc.RespChan <- nil:
 	default:
@@ -173,15 +186,36 @@ func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg interface{}) {
 }
 
 // 通过网络连接的sessionId发送消息
-func (mgr *RpcManager) SendMsgByConnId(connSessionId int64, msgId int, msg proto.Message) error {
-	innerMsg := &InnerMessage{
-		Head:  InnerMessageHead{CallId: genNextRpcCallId(), MsgID: msgId},
-		PbMsg: msg,
-	}
-
-	err := rpcMgr.rpcStubMgr.netcore.TcpSendMsg(connSessionId, innerMsg)
+func (mgr *RpcManager) TcpSendMsg(connSessionId int64, msg any) error {
+	err := mgr.rpcStubMgr.netcore.TcpSendMsg(connSessionId, msg)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func (mgr *RpcManager) SetMsgHandler(handler any) {
+	methodMap := make(map[int]reflect.Value)
+	refType := reflect.TypeOf(handler)
+	refValue := reflect.ValueOf(handler)
+	methodCount := refType.NumMethod()
+	for i := 0; i < methodCount; i++ {
+		methodName := refType.Method(i).Name
+		if !strings.HasPrefix(methodName, RpcHandlerMethodPrefix) {
+			continue
+		}
+		reqMsgName := methodName[len(RpcHandlerMethodPrefix):]
+		reqMsgId := pb.GetMsgIdByName(reqMsgName)
+		methodMap[reqMsgId] = refValue.Method(i)
+	}
+
+	mgr.msgHandleMap = methodMap
+}
+
+func (mgr *RpcManager) GetMsgHandlerFunc(msgId int) *reflect.Value {
+	method, ok := mgr.msgHandleMap[msgId]
+	if !ok {
+		return nil
+	}
+	return &method
 }

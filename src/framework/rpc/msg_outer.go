@@ -6,6 +6,7 @@ import (
 
 	"framework/log"
 	"framework/network"
+	"framework/proto/pb"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -26,10 +27,13 @@ type OuterMessage struct {
 // 客户端协议解析器
 // |CallId-8bytes|MsgID-4bytes|pbcontent-nbytes|
 type OuterMessageCodec struct {
+	rpcMgr *RpcManager
 }
 
-func NewOuterMessageCodec() *OuterMessageCodec {
-	return &OuterMessageCodec{}
+func NewOuterMessageCodec(rpcMgr *RpcManager) *OuterMessageCodec {
+	return &OuterMessageCodec{
+		rpcMgr: rpcMgr,
+	}
 }
 func (cc *OuterMessageCodec) Encode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	outerMsg := in.(*OuterMessage)
@@ -41,7 +45,9 @@ func (cc *OuterMessageCodec) Encode(c network.Connection, in interface{}) (inter
 	binary.LittleEndian.PutUint32(out[skip:], uint32(outerMsg.Head.MsgID))
 	skip += 4
 
-	out = append(out, outerMsg.Content...)
+	content, _ := proto.Marshal(outerMsg.PbMsg)
+
+	out = append(out, content...)
 
 	return out, true, nil
 }
@@ -59,6 +65,30 @@ func (cc *OuterMessageCodec) Decode(c network.Connection, in interface{}) (inter
 	msg.Head.MsgID = int(binary.LittleEndian.Uint32(outerMsgBytes[skip:]))
 	skip += 4
 	msg.Content = outerMsgBytes[skip:]
+	if msg.Head.MsgID == 0 {
+		//rpc response
+		rpcEntry := cc.rpcMgr.GetRpc(msg.Head.CallId)
+		//respMsg := proto.Clone(rpcEntry.RespMsg)
+		err := proto.Unmarshal(msg.Content, rpcEntry.RespMsg)
+		if err != nil {
+			//log error
+		} else {
+			msg.PbMsg = rpcEntry.RespMsg
+		}
+	} else if msg.Head.MsgID > 0 {
+		reqMsg, _ := pb.GetProtoMsgById(msg.Head.MsgID)
+		if reqMsg == nil {
+			// log error
+		}
+		err := proto.Unmarshal(msg.Content, reqMsg)
+		if err != nil {
+			//log error
+		} else {
+			msg.PbMsg = reqMsg
+		}
+	} else {
+		// message id error
+	}
 
 	return msg, true, nil
 }
@@ -103,29 +133,6 @@ func (e *OuterNetEvent) OnRcvMsg(c network.Connection, msg interface{}) {
 	log.Debug("NetEvent OnRcvMsg, sessionId : %v, msg: %+v", c.GetSessionId(), rcvOuterMsg)
 
 	if rcvOuterMsg.Head.MsgID == 0 {
-
-		e.rpcMgr.OnRcvResponse(rcvOuterMsg.Head.CallId, rcvOuterMsg)
-
-	} //else {
-
-	// handler := GetProtoMsgHandler(rcvInnerMsg.Head.MsgID)
-	// // if handler.Kind() != reflect.Func {
-	// // 	log.Error("get handler error, msg_id : %v", rcvInnerMsg.Head.MsgID)
-	// // 	return
-	// // }
-	// resp := GetProtoMsgById(rcvInnerMsg.Head.MsgID)
-	// if resp == nil {
-	// 	log.Error("get resp msg error, msg_id : %v", rcvInnerMsg.Head.MsgID)
-	// 	return
-	// }
-	// in := []reflect.Value{reflect.ValueOf(rcvInnerMsg.PbMsg), reflect.ValueOf(resp)}
-	// handler.Call(in)
-
-	// respInnerMsg := &InnerMessage{}
-	// respInnerMsg.Head.CallId = rcvInnerMsg.Head.CallId
-	// respInnerMsg.Head.MsgID = 0
-	// respInnerMsg.PbMsg = resp
-
-	// e.rpcMgr.rpcStubMgr.netcore.TcpSendMsg(c.GetSessionId(), respInnerMsg)
-	//}
+		e.rpcMgr.OnRcvResponse(rcvOuterMsg.Head.CallId, rcvOuterMsg.PbMsg)
+	}
 }

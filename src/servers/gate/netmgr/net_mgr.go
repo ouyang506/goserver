@@ -3,12 +3,14 @@ package netmgr
 import (
 	"framework/rpc"
 	"gate/config"
+	"gate/handler"
 	"strings"
 )
 
 // 网络管理
 type NetMgr struct {
-	conf *config.Config
+	conf       *config.Config
+	msgHandler *handler.MessageHandler
 }
 
 func NewNetMgr() *NetMgr {
@@ -20,7 +22,13 @@ func NewNetMgr() *NetMgr {
 func (mgr *NetMgr) Init(conf *config.Config) {
 	mgr.conf = conf
 
-	rpc.InitOuterRpc(NewNetMessageEvent())
+	// init rpc message handler
+	mgr.msgHandler = handler.NewMessageHandler()
+
+	// startup rpc
+	netEventhandler := NewNetMessageEvent()
+	rpc.InitOuterRpc(netEventhandler, mgr.msgHandler)
+	netEventhandler.SetRpcMgr(rpc.GetOuterRpcManager())
 }
 
 func (mgr *NetMgr) Start() {

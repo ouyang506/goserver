@@ -5,16 +5,19 @@ import (
 	"framework/network"
 	"framework/proto/pb"
 	"framework/rpc"
-
-	"google.golang.org/protobuf/proto"
+	"reflect"
 )
 
 // 网络事件回调
 type NetMessageEvent struct {
+	rpcMgr *rpc.RpcManager
 }
 
 func NewNetMessageEvent() *NetMessageEvent {
 	return &NetMessageEvent{}
+}
+func (e *NetMessageEvent) SetRpcMgr(rpcMgr *rpc.RpcManager) {
+	e.rpcMgr = rpcMgr
 }
 
 func (e *NetMessageEvent) OnAccept(c network.Connection) {
@@ -37,35 +40,22 @@ func (e *NetMessageEvent) OnRcvMsg(c network.Connection, msg interface{}) {
 	if msgId > 0 {
 
 		log.Debug("handle message, id: %d", msgId)
-		arr, ok := pb.MsgId2Type[msgId]
-		if !ok {
-			// drop the illegal request message
+		reqMsg := rcvOuterMsg.PbMsg
+		_, respMsg := pb.GetProtoMsgById(msgId)
+		method := e.rpcMgr.GetMsgHandlerFunc(msgId)
+		if method == nil {
+			//log error
 			return
 		}
-		// req := reflect.New(reflect.TypeOf(arr[0]).Elem())
-		// resp := reflect.New(reflect.TypeOf(arr[1]).Elem())
-		req := arr[0].Interface()
-		proto.Unmarshal(rcvOuterMsg.Content, req)
 
-		// handler := GetProtoMsgHandler(rcvInnerMsg.Head.MsgID)
-		// // if handler.Kind() != reflect.Func {
-		// // 	log.Error("get handler error, msg_id : %v", rcvInnerMsg.Head.MsgID)
-		// // 	return
-		// // }
-		// resp := GetProtoMsgById(rcvInnerMsg.Head.MsgID)
-		// if resp == nil {
-		// 	log.Error("get resp msg error, msg_id : %v", rcvInnerMsg.Head.MsgID)
-		// 	return
-		// }
-		// in := []reflect.Value{reflect.ValueOf(rcvInnerMsg.PbMsg), reflect.ValueOf(resp)}
-		// handler.Call(in)
+		method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
 
-		// respInnerMsg := &InnerMessage{}
-		// respInnerMsg.Head.CallId = rcvInnerMsg.Head.CallId
-		// respInnerMsg.Head.MsgID = 0
-		// respInnerMsg.PbMsg = resp
+		respOuterMsg := &rpc.OuterMessage{}
+		respOuterMsg.Head.CallId = rcvOuterMsg.Head.CallId
+		respOuterMsg.Head.MsgID = 0
+		respOuterMsg.PbMsg = respMsg
 
-		// e.rpcMgr.rpcStubMgr.netcore.TcpSendMsg(c.GetSessionId(), respInnerMsg)
+		e.rpcMgr.TcpSendMsg(c.GetSessionId(), respOuterMsg)
 
 	}
 }

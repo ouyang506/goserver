@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"errors"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -13,6 +14,14 @@ import (
 
 	"google.golang.org/protobuf/proto"
 )
+
+var (
+	ErrorAddRpc         = errors.New("add rpc error")
+	ErrorRpcTimeOut     = errors.New("rpc time out error")
+	ErrorRpcRespMsgType = errors.New("rpc response msg type error")
+)
+
+const RpcHandlerMethodPrefix = "HandleRpc"
 
 type RpcModeType int
 
@@ -120,8 +129,8 @@ func doCall(rpcMode RpcModeType, targetSvrType int,
 }
 
 // 初始化服务器内部rpc管理器
-func InitRpc(eventHandler network.NetEventHandler) {
-	rpcMgr = NewRpcManager(RpcModeInner, eventHandler)
+func InitRpc(eventHandler network.NetEventHandler, msgHandler any) {
+	rpcMgr = NewRpcManager(RpcModeInner, eventHandler, msgHandler)
 }
 
 // 提供内部监听服务
@@ -148,8 +157,8 @@ func Notify(targetSvrType int, reqMsgId int,
 }
 
 // 初始化客户端到服务器rpc管理器
-func InitOuterRpc(eventHandler network.NetEventHandler) {
-	outerRpcMgr = NewRpcManager(RpcModeOuter, eventHandler)
+func InitOuterRpc(eventHandler network.NetEventHandler, msgHandler any) {
+	outerRpcMgr = NewRpcManager(RpcModeOuter, eventHandler, msgHandler)
 }
 
 // 提供外部监听服务

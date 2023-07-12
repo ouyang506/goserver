@@ -26,10 +26,13 @@ type InnerMessage struct {
 // 服务器内部解析器
 // |CallId-8bytes|MsgID-4bytes|pbcontent-nbytes|
 type InnerMessageCodec struct {
+	rpcMgr *RpcManager
 }
 
-func NewInnerMessageCodec() *InnerMessageCodec {
-	return &InnerMessageCodec{}
+func NewInnerMessageCodec(rpcMgr *RpcManager) *InnerMessageCodec {
+	return &InnerMessageCodec{
+		rpcMgr: rpcMgr,
+	}
 }
 func (cc *InnerMessageCodec) Encode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	innerMsg := in.(*InnerMessage)
@@ -124,29 +127,6 @@ func (e *InnerNetEvent) OnRcvMsg(c network.Connection, msg interface{}) {
 	log.Debug("NetEvent OnRcvMsg, sessionId : %v, msg: %+v", c.GetSessionId(), rcvInnerMsg)
 
 	if rcvInnerMsg.Head.MsgID == 0 {
-
-		e.rpcMgr.OnRcvResponse(rcvInnerMsg.Head.CallId, rcvInnerMsg)
-
-	} //else {
-
-	// handler := GetProtoMsgHandler(rcvInnerMsg.Head.MsgID)
-	// // if handler.Kind() != reflect.Func {
-	// // 	log.Error("get handler error, msg_id : %v", rcvInnerMsg.Head.MsgID)
-	// // 	return
-	// // }
-	// resp := GetProtoMsgById(rcvInnerMsg.Head.MsgID)
-	// if resp == nil {
-	// 	log.Error("get resp msg error, msg_id : %v", rcvInnerMsg.Head.MsgID)
-	// 	return
-	// }
-	// in := []reflect.Value{reflect.ValueOf(rcvInnerMsg.PbMsg), reflect.ValueOf(resp)}
-	// handler.Call(in)
-
-	// respInnerMsg := &InnerMessage{}
-	// respInnerMsg.Head.CallId = rcvInnerMsg.Head.CallId
-	// respInnerMsg.Head.MsgID = 0
-	// respInnerMsg.PbMsg = resp
-
-	// e.rpcMgr.rpcStubMgr.netcore.TcpSendMsg(c.GetSessionId(), respInnerMsg)
-	//}
+		e.rpcMgr.OnRcvResponse(rcvInnerMsg.Head.CallId, rcvInnerMsg.PbMsg)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"framework/consts"
 	"framework/rpc"
 	"mockclient/config"
+	"mockclient/handler"
 )
 
 // 网络管理
@@ -14,7 +15,7 @@ type NetMgr struct {
 func NewNetMgr() *NetMgr {
 	mgr := &NetMgr{}
 
-	rpc.InitOuterRpc(NewNetMessageEvent())
+	rpc.InitOuterRpc(NewNetMessageEvent(), handler.NewMessageHandler())
 
 	return mgr
 }

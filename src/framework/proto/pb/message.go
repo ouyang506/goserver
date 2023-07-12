@@ -6,7 +6,7 @@ import(
 	"framework/proto/pb/ss"
 )
 
-var CsMsgArray [][]interface{} = [][]interface{}{
+var CSMsg [][]any = [][]any{
 	//cs_gate
 	{int(cs.CsGate_msg_id_req_heart_beat), &cs.ReqHeartBeat{}, &cs.RespHeartBeat{}},
 	{int(cs.CsGate_msg_id_req_login_gate), &cs.ReqLoginGate{}, &cs.RespLoginGate{}},
@@ -16,7 +16,7 @@ var CsMsgArray [][]interface{} = [][]interface{}{
 	{int(cs.CsRank_msg_id_req_query_rank_info), &cs.ReqQueryRankInfo{}, &cs.RespQueryRankInfo{}},	
 }
 
-var SsMsgArray [][4]interface{} = [][4]interface{}{
+var SSMsg [][]any = [][]any{
 	// ss_rank
 	{int(ss.SsRank_msg_id_req_sync_rank_score), &ss.ReqSyncRankScore{}, &ss.RespSyncRankScore{}},
 }
