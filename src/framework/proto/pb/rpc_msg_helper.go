@@ -17,7 +17,7 @@ func init() {
 }
 
 func fillMsgMap() {
-	for _, info := range CSMsg {
+	for _, info := range CSRpcMsg {
 		msgId := info[0].(int)
 		arr := []proto.Message{}
 		arr = append(arr, proto.Clone(info[1].(proto.Message)))
@@ -31,7 +31,7 @@ func fillMsgMap() {
 		MsgId2Name[msgId] = msgName
 	}
 
-	for _, info := range SSMsg {
+	for _, info := range SSRpcMsg {
 		msgId := info[0].(int)
 		arr := []proto.Message{}
 		arr = append(arr, proto.Clone(info[1].(proto.Message)))

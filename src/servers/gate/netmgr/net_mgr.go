@@ -27,8 +27,8 @@ func (mgr *NetMgr) Init(conf *config.Config) {
 
 	// startup rpc
 	netEventhandler := NewNetMessageEvent()
-	rpc.InitOuterRpc(netEventhandler, mgr.msgHandler)
-	netEventhandler.SetRpcMgr(rpc.GetOuterRpcManager())
+	rpc.InitRpc(rpc.RpcModeOuter, netEventhandler, mgr.msgHandler)
+	netEventhandler.SetRpcMgr(rpc.GetRpcManager(rpc.RpcModeOuter))
 }
 
 func (mgr *NetMgr) Start() {
@@ -39,7 +39,7 @@ func (mgr *NetMgr) listenForClients() error {
 	ip := strings.TrimSpace(mgr.conf.Outer.IP)
 	port := mgr.conf.Outer.Port
 
-	rpc.OuterTcpListen(ip, port)
+	rpc.TcpListen(rpc.RpcModeOuter, ip, port)
 
 	return nil
 }

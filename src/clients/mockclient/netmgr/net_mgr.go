@@ -15,7 +15,7 @@ type NetMgr struct {
 func NewNetMgr() *NetMgr {
 	mgr := &NetMgr{}
 
-	rpc.InitOuterRpc(NewNetMessageEvent(), handler.NewMessageHandler())
+	rpc.InitRpc(rpc.RpcModeOuter, NewNetMessageEvent(), handler.NewMessageHandler())
 
 	return mgr
 }
@@ -25,7 +25,7 @@ func (mgr *NetMgr) Init(conf *config.Config) {
 }
 
 func (mgr *NetMgr) Start() {
-	outerRpcMgr := rpc.GetOuterRpcManager()
+	outerRpcMgr := rpc.GetRpcManager(rpc.RpcModeOuter)
 	for i, gateInfo := range mgr.conf.Gates.GateInfos {
 		outerRpcMgr.AddStub(int(consts.ServerTypeGate), i, gateInfo.IP, int(gateInfo.Port))
 		break

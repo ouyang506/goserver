@@ -77,6 +77,6 @@ func (app *App) update() {
 	resp := &cs.RespLoginGate{}
 
 	log.Debug("begin rpc call")
-	err := rpc.OuterCall(int(cs.CsGate_msg_id_req_login_gate), req, resp)
+	err := rpc.OuterCall(req, resp)
 	log.Debug("end rpc call, req: %v,  resp: %v, error: %v", req, resp, err)
 }

@@ -15,5 +15,10 @@ set protoc_ss=protoc -I../src/framework/proto/idl/cs -I../src/framework/proto/id
 
 cd %pwd%
 
+: 生成rpc消息胶水代码rpc_msg_define.go
+cd ../../../../tools/proto_parser
+proto_parser
+cd %pwd%
+
 :pause
 exit

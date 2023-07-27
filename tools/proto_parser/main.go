@@ -4,32 +4,40 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"text/template"
 
 	"github.com/emicklei/proto"
 )
 
-//全部proto文件定义
-type MsgMapping map[string]*FileProtoDefinition
+var (
+	rootDir       = "../../src/framework/proto/idl"
+	outputFile    = "../../src/framework/proto/pb/rpc_msg_define.go"
+	allMsgMapping = make(map[string]*FileProtoDefinition) // 全部proto文件定义
+)
 
-//单个proto文件内的定义
-type FileProtoDefinition struct {
-	filename          string
-	packageName       string
-	msgIdMap          map[string]int
-	msgList           []string
-	validRpcMsg       []RpcMsgInfo
-	validRpcNotifyMsg []RpcNotifyMsgInfo
+// rpc请求信息
+type RpcMsgInfo struct {
+	ReqMsgId     int
+	ReqMsgIdName string
+	ReqMsgName   string
+	RespMsgName  string // 当为notify时回复消息为空值
 }
 
-// func (d *FileProtoDefinition) String() string {
-// 	return fmt.Sprintf("filename: %s, package: %s, msgIdMap: %v, msgList: %v",
-// 		d.filename, d.packageName, d.msgIdMap, d.msgList)
-// }
+// 单个proto文件内的定义
+type FileProtoDefinition struct {
+	filepath      string
+	packageName   string
+	msgIdEnumName string
+	msgIdMap      map[string]int
+	msgList       []string
+	validRpcMsg   []RpcMsgInfo
+}
 
 func (d *FileProtoDefinition) genRpcMsgMap() {
 	for _, msgname := range d.msgList {
-		//req_开头的为rpc消息
+		//"req_"开头的为rpc消息
 		if strings.HasPrefix(msgname, "req_") {
 			//请求的消息id
 			reqMsgId, ok := d.msgIdMap[msgname]
@@ -38,7 +46,7 @@ func (d *FileProtoDefinition) genRpcMsgMap() {
 				os.Exit(1)
 			}
 
-			//resp_开头为rpc应答消息
+			//"resp_"开头为rpc应答消息
 			respMsgName := "resp_" + msgname[len("req_"):]
 			bFindRespMsg := false
 			for _, v := range d.msgList {
@@ -52,21 +60,20 @@ func (d *FileProtoDefinition) genRpcMsgMap() {
 				os.Exit(1)
 			}
 
-			//应答的消息id
-			// respMsgId, ok := d.msgIdMap[respMsgName]
-			// if !ok {
-			// 	fmt.Printf("rpc response message %s not defined a messag id.\n", respMsgName)
-			// 	os.Exit(1)
-			// }
-
 			rpcMsgInfo := RpcMsgInfo{
-				reqMsgId:    reqMsgId,
-				reqMsgName:  msgname,
-				respMsgName: respMsgName,
+				ReqMsgId:     reqMsgId,
+				ReqMsgIdName: "msg_id_" + msgname,
+				ReqMsgName:   msgname,
+				RespMsgName:  respMsgName,
 			}
 
-			allMsgMapping[currentFile].validRpcMsg = append(allMsgMapping[currentFile].validRpcMsg, rpcMsgInfo)
-		} else if strings.HasPrefix(msgname, "notify_") {
+			allMsgMapping[d.filepath].validRpcMsg = append(allMsgMapping[d.filepath].validRpcMsg, rpcMsgInfo)
+		}
+	}
+
+	for _, msgname := range d.msgList {
+		//"notify_"开头的为rpc通知消息(one way)
+		if strings.HasPrefix(msgname, "notify_") {
 			//通知的消息id
 			notifyMsgId, ok := d.msgIdMap[msgname]
 			if !ok {
@@ -74,72 +81,45 @@ func (d *FileProtoDefinition) genRpcMsgMap() {
 				continue
 			}
 
-			notifyMsgInfo := RpcNotifyMsgInfo{
-				msgId:   notifyMsgId,
-				msgName: msgname,
+			notifyMsgInfo := RpcMsgInfo{
+				ReqMsgId:     notifyMsgId,
+				ReqMsgIdName: "msg_id_" + msgname,
+				ReqMsgName:   msgname,
+				RespMsgName:  "",
 			}
-
-			allMsgMapping[currentFile].validRpcNotifyMsg = append(allMsgMapping[currentFile].validRpcNotifyMsg, notifyMsgInfo)
-		} else {
-			//ignore, normal message definition
+			allMsgMapping[d.filepath].validRpcMsg = append(allMsgMapping[d.filepath].validRpcMsg, notifyMsgInfo)
 		}
 	}
 }
 
-//rpc请求信息
-type RpcMsgInfo struct {
-	reqMsgId    int
-	reqMsgName  string
-	respMsgName string
+// rpc请求信息
+type TemplateRpcMsgInfo struct {
+	FileName          string //proto文件名(去掉.proto后缀)
+	PackageName       string //包名
+	ReqMsgId          int    //消息ID
+	TemplReqMsgIdName string //消息id的枚举名(go style)
+	TemplReqMsgName   string //(go style)
+	TemplRespMsgName  string // 当为notify时回复消息为空值(go style)
 }
-
-//rpc通知信息(one way)
-type RpcNotifyMsgInfo struct {
-	msgId   int
-	msgName string
-}
-
-var (
-	rootDir       = "C:\\Users\\ouyang\\Desktop\\workspace\\goserver\\common\\pbmsg\\idl"
-	allMsgMapping = make(MsgMapping)
-	currentFile   string
-)
 
 func main() {
 	protoFiles := getProtoFiles(rootDir)
-	for _, filename := range protoFiles {
-		allMsgMapping[filename] = &FileProtoDefinition{
-			filename: filename,
+	for _, filepath := range protoFiles {
+		allMsgMapping[filepath] = &FileProtoDefinition{
+			filepath: filepath,
 			msgIdMap: make(map[string]int),
 		}
-		currentFile = filename
-		doParse(filename)
-		allMsgMapping[filename].genRpcMsgMap()
+		doParse(filepath)
+		allMsgMapping[filepath].genRpcMsgMap()
 	}
+	//控制台打印
+	printAllMsg()
 
-	//打印rpc消息定义
-	fmt.Printf("*******************************************\n")
-	for filename, msgMappingInfo := range allMsgMapping {
-		fmt.Printf("%-15s: %s\n", "Proto File", filename)
-		if len(msgMappingInfo.validRpcMsg) > 0 {
-			fmt.Printf("%-15s:\n", "Rpc Message")
-			for _, v := range msgMappingInfo.validRpcMsg {
-				fmt.Printf("[%d : %s -> %s]\n", v.reqMsgId, v.reqMsgName, v.respMsgName)
-			}
-		}
-
-		if len(msgMappingInfo.validRpcNotifyMsg) > 0 {
-			fmt.Printf("%-15s:\n", "Notify Message")
-			for _, v := range msgMappingInfo.validRpcNotifyMsg {
-				fmt.Printf("[%d : %s]\n", v.msgId, v.msgName)
-			}
-		}
-
-		fmt.Printf("*******************************************\n")
-	}
+	//生成胶水文件
+	genFileCode()
 }
 
-//获取目录下的所有proto文件
+// 获取目录下的所有proto文件
 func getProtoFiles(dirPath string) []string {
 	files := []string{}
 	filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
@@ -149,53 +129,173 @@ func getProtoFiles(dirPath string) []string {
 		if !strings.HasSuffix(info.Name(), ".proto") {
 			return nil
 		}
-		files = append(files, info.Name())
+		files = append(files, path)
 		return nil
 	})
 	return files
 }
 
-//解析单个proto文件定义
-func doParse(filename string) {
-	filepath := rootDir + "/" + filename
+// 解析单个proto文件定义
+func doParse(filepath string) {
 	reader, _ := os.Open(filepath)
 	defer reader.Close()
 
 	parser := proto.NewParser(reader)
-	definition, _ := parser.Parse()
+	definition, err := parser.Parse()
+	if err != nil {
+		fmt.Printf("parse file %s error: %s", filepath, err)
+		os.Exit(1)
+	}
 
 	proto.Walk(definition,
-		proto.WithPackage(handlePackage),
-		proto.WithEnum(handleEnum),
-		proto.WithMessage(handleMessage))
+		// 解析包名
+		proto.WithPackage(func(p *proto.Package) {
+			allMsgMapping[filepath].packageName = p.Name
+		}),
+
+		// 解析MessageID
+		proto.WithEnum(func(e *proto.Enum) {
+			allMsgMapping[filepath].msgIdEnumName = e.Name
+			for _, elem := range e.Elements {
+				enumField := elem.(*proto.EnumField)
+				if !strings.HasPrefix(enumField.Name, "msg_id_") {
+					return
+				}
+				allMsgMapping[filepath].msgIdMap[enumField.Name[len("msg_id_"):]] = enumField.Integer
+			}
+		}),
+
+		// 解析消息定义
+		proto.WithMessage(func(m *proto.Message) {
+			allMsgMapping[filepath].msgList = append(allMsgMapping[filepath].msgList, m.Name)
+		}))
 }
 
-//解析包名
-func handlePackage(p *proto.Package) {
-	allMsgMapping[currentFile].packageName = p.Name
+// 打印rpc消息定义
+func printAllMsg() {
+	fmt.Printf("*******************************************************************\n\n")
+	for path, msgMappingInfo := range allMsgMapping {
+		if len(msgMappingInfo.validRpcMsg) <= 0 {
+			continue
+		}
+		_, filename := filepath.Split(path)
+		fmt.Printf("%-10s: %s\n", "Proto File", filename)
+
+		//fmt.Printf("%-15s:\n", "Rpc Message")
+		for _, v := range msgMappingInfo.validRpcMsg {
+			if v.RespMsgName != "" {
+				fmt.Printf("[%d : %s -> %s]\n", v.ReqMsgId, v.ReqMsgName, v.RespMsgName)
+			}
+		}
+		//fmt.Printf("%-15s:\n", "Notify Message")
+		for _, v := range msgMappingInfo.validRpcMsg {
+			if v.RespMsgName == "" {
+				fmt.Printf("[%d : %s]\n", v.ReqMsgId, v.ReqMsgName)
+			}
+		}
+		fmt.Printf("\n******************************************************************\n\n")
+	}
 }
 
-//解析MessageID
-func handleEnum(e *proto.Enum) {
-	if e.Name != "MessageID" {
+// 生成胶水代码
+func genFileCode() {
+	text := `// Code generated by tool. DO NOT EDIT.
+package pb
+
+import (
+	"framework/proto/pb/cs"
+	"framework/proto/pb/ss"
+)
+{{$filename := ""}}
+var CSRpcMsg [][]any = [][]any{
+{{- range $i, $v := .}}
+{{- if ne $v.PackageName "cs"}}{{continue}}{{end}}
+{{- if ne $filename $v.FileName}}
+{{printf "\t//%s" $v.FileName -}}
+{{$filename = $v.FileName}}
+{{- end}}
+{{- if eq $v.TemplRespMsgName ""}}
+{{printf "\t{int(%s), &%s{}}," $v.TemplReqMsgIdName $v.TemplReqMsgName}}
+{{- else}}
+{{printf "\t{int(%s), &%s{}, &%s{}}," $v.TemplReqMsgIdName $v.TemplReqMsgName $v.TemplRespMsgName}}
+{{- end}}
+{{- end}}
+}
+{{$filename = ""}}
+var SSRpcMsg [][]any = [][]any{
+{{- range $i, $v := .}}
+{{- if ne $v.PackageName "ss"}}{{continue}}{{end}}
+{{- if ne $filename $v.FileName}}
+{{printf "\t//%s" $v.FileName -}}
+{{$filename = $v.FileName}}
+{{- end}}
+{{- if eq $v.TemplRespMsgName ""}}
+{{printf "\t{int(%s), &%s{}}," $v.TemplReqMsgIdName $v.TemplReqMsgName}}
+{{- else}}
+{{printf "\t{int(%s), &%s{}, &%s{}}," $v.TemplReqMsgIdName $v.TemplReqMsgName $v.TemplRespMsgName}}
+{{- end}}
+{{- end}}
+}
+`
+	tmpl, err := template.New("proto").Parse(text)
+	if err != nil {
+		fmt.Printf("create template error: %s\n", err)
 		return
 	}
-	visitor := new(enumVisitor)
-	for _, each := range e.Elements {
-		each.Accept(visitor)
+
+	codeFile, err := os.OpenFile(outputFile, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
+	if err != nil {
+		fmt.Printf("create go file error: %s\n", err)
+		return
+	}
+
+	templRpcMsgArr := []TemplateRpcMsgInfo{}
+
+	for path, fileRpcInfo := range allMsgMapping {
+		_, filename := filepath.Split(path)
+		filename = strings.TrimSuffix(filename, ".proto")
+		packageName := fileRpcInfo.packageName
+		msgIdEnumName := fileRpcInfo.msgIdEnumName
+		for _, rpcInfo := range fileRpcInfo.validRpcMsg {
+			data := TemplateRpcMsgInfo{}
+			data.FileName = filename
+			data.PackageName = packageName
+			data.ReqMsgId = rpcInfo.ReqMsgId
+			data.TemplReqMsgIdName = packageName + "." + toGoStyle(msgIdEnumName) + "_" + rpcInfo.ReqMsgIdName
+			data.TemplReqMsgName = packageName + "." + toGoStyle(rpcInfo.ReqMsgName)
+			if rpcInfo.RespMsgName != "" {
+				data.TemplRespMsgName = packageName + "." + toGoStyle(rpcInfo.RespMsgName)
+			}
+			templRpcMsgArr = append(templRpcMsgArr, data)
+		}
+	}
+	//由于每个proto文件的消息ID人为约束范围，直接用消息ID排序
+	sort.SliceStable(templRpcMsgArr, func(i, j int) bool {
+		return templRpcMsgArr[i].ReqMsgId < templRpcMsgArr[j].ReqMsgId
+	})
+
+	err = tmpl.Execute(codeFile, templRpcMsgArr)
+	if err != nil {
+		fmt.Printf("template executed error: %s\n", err)
+		return
 	}
 }
 
-//enum遍历
-type enumVisitor struct {
-	proto.NoopVisitor
-}
-
-func (v enumVisitor) VisitEnumField(i *proto.EnumField) {
-	allMsgMapping[currentFile].msgIdMap[i.Name] = i.Integer
-}
-
-//解析消息定义
-func handleMessage(m *proto.Message) {
-	allMsgMapping[currentFile].msgList = append(allMsgMapping[currentFile].msgList, m.Name)
+func toGoStyle(src string) string {
+	dest := strings.Builder{}
+	grow := 'A' - 'a'
+	flag := true
+	for i := 0; i < len(src); i++ {
+		if src[i] == '_' {
+			flag = true
+			continue
+		}
+		if flag {
+			dest.WriteByte(src[i] + byte(grow))
+			flag = false
+		} else {
+			dest.WriteByte(src[i])
+		}
+	}
+	return dest.String()
 }

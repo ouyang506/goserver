@@ -3,7 +3,7 @@ package registry
 import (
 	"context"
 	"fmt"
-	"framwork/log"
+	"framework/log"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"

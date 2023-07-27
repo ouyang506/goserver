@@ -1,8 +1,8 @@
 package workpool
 
 import (
-	"common/utility/queue"
 	"sync"
+	"utility/queue"
 )
 
 type WorkerQueue struct {
