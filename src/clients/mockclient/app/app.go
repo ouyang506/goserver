@@ -7,6 +7,7 @@ import (
 	"framework/rpc"
 	"mockclient/config"
 	"mockclient/netmgr"
+	"mockclient/robot"
 	"os"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ func GetApp() *App {
 type App struct {
 	conf   *config.Config
 	netMgr *netmgr.NetMgr
+	robot  *robot.Robot
 }
 
 func (app *App) init() bool {
@@ -49,6 +51,9 @@ func (app *App) init() bool {
 	// init net manager
 	app.netMgr = netmgr.NewNetMgr()
 	app.netMgr.Init(app.conf)
+
+	// init robot
+	app.robot = robot.NewRobot()
 
 	return true
 }
