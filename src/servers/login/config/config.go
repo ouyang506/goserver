@@ -7,14 +7,10 @@ import (
 )
 
 type Config struct {
-	Gates Gates `xml:"gates"`
+	HttpListen HttpListenAddr `xml:"http_listen"`
 }
 
-type Gates struct {
-	GateInfos []GateAddr `xml:"gate"`
-}
-
-type GateAddr struct {
+type HttpListenAddr struct {
 	IP   string `xml:"ip,attr,omitempty"`
 	Port int32  `xml:"port,attr,omitempty"`
 }

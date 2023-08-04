@@ -7,29 +7,30 @@
 			"path": "framework"
 		},
 		{
+			"name": "mockclient",
+			"path": "clients\\mockclient"
+		},
+		{
 			"name": "gate",
 			"path": "servers\\gate"
 		},
 		{
-			"name": "mockclient",
-			"path": "clients\\mockclient"
-		}
+			"name": "login",
+			"path": "servers\\login"
+		},
+		{
+			"name": "mysqlproxy",
+			"path": "servers\\mysqlproxy"
+		},
+		{
+			"name": "redisproxy",
+			"path": "servers\\redisproxy"
+		},
+
 	],
 	"launch": {
 		"version": "0.2.0",
 		"configurations": [
-			{
-				"name": "LaunchGate",
-				"type": "go",
-				"request": "launch",
-				"mode": "auto",
-				"program": "${workspaceRoot:gate}\\main.go",
-				"presentation": {
-					"hidden": true,
-					"group": "",
-					"order": 1
-				}
-			},
 			{
 				"name": "LaunchMockClient",
 				"type": "go",
@@ -41,12 +42,60 @@
 					"group": "",
 					"order": 1
 				}
+			},
+			{
+				"name": "LaunchLogin",
+				"type": "go",
+				"request": "launch",
+				"mode": "auto",
+				"program": "${workspaceRoot:login}\\main.go",
+				"presentation": {
+					"hidden": false,
+					"group": "",
+					"order": 2
+				}
+			},
+			{
+				"name": "LaunchGate",
+				"type": "go",
+				"request": "launch",
+				"mode": "auto",
+				"program": "${workspaceRoot:gate}\\main.go",
+				"presentation": {
+					"hidden": true,
+					"group": "",
+					"order": 3
+				}
+			},
+			{
+				"name": "LaunchMysqlProxy",
+				"type": "go",
+				"request": "launch",
+				"mode": "auto",
+				"program": "${workspaceRoot:mysqlproxy}\\main.go",
+				"presentation": {
+					"hidden": true,
+					"group": "",
+					"order": 4
+				}
+			},
+			{
+				"name": "LaunchRedisProxy",
+				"type": "go",
+				"request": "launch",
+				"mode": "auto",
+				"program": "${workspaceRoot:redisproxy}\\main.go",
+				"presentation": {
+					"hidden": true,
+					"group": "",
+					"order": 5
+				}
 			}
 		],
 		"compounds": [
 			{
 					"name": "LaunchAll",
-					"configurations": ["LaunchGate", "LaunchMockClient"],
+					"configurations": ["LaunchLogin", "LaunchGate", "LaunchMysqlProxy","LaunchRedisProxy" "LaunchMockClient"],
 					"stopAll": true,
 					"presentation": {
 							"hidden": false,
