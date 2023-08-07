@@ -7,16 +7,20 @@ import (
 )
 
 type Config struct {
-	LoginServers LoginServers `xml:"login_servers"`
+	Registry  RegistryConfig `xml:"registry"`
+	MysqlConf MysqlConfig    `xml:"mysql"`
 }
 
-type LoginServers struct {
-	LoginServer []AddrInfo `xml:"login_server"`
+type RegistryConfig struct {
+	IP   string `xml:"ip,omitempty"`
+	Port int32  `xml:"port,omitempty"`
 }
 
-type AddrInfo struct {
-	IP   string `xml:"ip,attr,omitempty"`
-	Port int32  `xml:"port,attr,omitempty"`
+type MysqlConfig struct {
+	Host     string `xml:"host,omitempty"`
+	Database string `xml:"database,omitempty"`
+	Username string `xml:"username,omitempty"`
+	Password string `xml:"password,omitempty"`
 }
 
 func NewConfig() *Config {

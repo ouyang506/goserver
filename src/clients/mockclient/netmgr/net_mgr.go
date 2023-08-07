@@ -3,31 +3,42 @@ package netmgr
 import (
 	"framework/consts"
 	"framework/rpc"
-	"mockclient/config"
 	"mockclient/handler"
 )
 
 // 网络管理
 type NetMgr struct {
-	conf *config.Config
 }
 
 func NewNetMgr() *NetMgr {
 	mgr := &NetMgr{}
-
-	rpc.InitRpc(rpc.RpcModeOuter, NewNetMessageEvent(), handler.NewMessageHandler())
-
 	return mgr
 }
 
-func (mgr *NetMgr) Init(conf *config.Config) {
-	mgr.conf = conf
+func (mgr *NetMgr) Start() {
+	rpc.InitRpc(rpc.RpcModeOuter, NewNetMessageEvent(), handler.NewMessageHandler())
 }
 
-func (mgr *NetMgr) Start() {
-	outerRpcMgr := rpc.GetRpcManager(rpc.RpcModeOuter)
-	for i, gateInfo := range mgr.conf.Gates.GateInfos {
-		outerRpcMgr.AddStub(int(consts.ServerTypeGate), i, gateInfo.IP, int(gateInfo.Port))
-		break
+func (mgr *NetMgr) RemoveGateStubs() {
+	rpcmgr := rpc.GetRpcManager(rpc.RpcModeOuter)
+	if rpcmgr == nil {
+		return
 	}
+	rpcmgr.DelTypeStubs(consts.ServerTypeGate)
+}
+
+func (mgr *NetMgr) AddGateStub(remoteIP string, remotePort int) {
+	rpcmgr := rpc.GetRpcManager(rpc.RpcModeOuter)
+	if rpcmgr == nil {
+		return
+	}
+	rpcmgr.AddStub(consts.ServerTypeGate, remoteIP, remotePort)
+}
+
+func (mgr *NetMgr) FindGateStub(remoteIP string, remotePort int) bool {
+	rpcmgr := rpc.GetRpcManager(rpc.RpcModeOuter)
+	if rpcmgr == nil {
+		return false
+	}
+	return rpcmgr.FindStub(consts.ServerTypeGate, remoteIP, remotePort) != nil
 }

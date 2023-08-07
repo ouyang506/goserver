@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+    <!-- 服务注册 -->
+    <registry>
+        <ip>127.0.0.1</ip>
+        <port>5300</port>
+    </registry>
+	
+	<!-- mysql配置 -->
+	<mysql>
+        <host>127.0.0.1</host>
+		<database>game</database>
+        <username>root</username>
+		<password>123456</password>
+    </mysql>
+</root>

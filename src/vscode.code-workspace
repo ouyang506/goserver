@@ -38,7 +38,7 @@
 				"mode": "auto",
 				"program": "${workspaceRoot:mockclient}\\main.go",
 				"presentation": {
-					"hidden": true,
+					"hidden": false,
 					"group": "",
 					"order": 1
 				}
@@ -62,7 +62,7 @@
 				"mode": "auto",
 				"program": "${workspaceRoot:gate}\\main.go",
 				"presentation": {
-					"hidden": true,
+					"hidden": false,
 					"group": "",
 					"order": 3
 				}
@@ -74,7 +74,7 @@
 				"mode": "auto",
 				"program": "${workspaceRoot:mysqlproxy}\\main.go",
 				"presentation": {
-					"hidden": true,
+					"hidden": false,
 					"group": "",
 					"order": 4
 				}
@@ -86,7 +86,7 @@
 				"mode": "auto",
 				"program": "${workspaceRoot:redisproxy}\\main.go",
 				"presentation": {
-					"hidden": true,
+					"hidden": false,
 					"group": "",
 					"order": 5
 				}

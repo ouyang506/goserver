@@ -1,9 +1,10 @@
 package rpc
 
 import (
+	"fmt"
 	"framework/log"
 	"framework/network"
-	"strconv"
+	"sort"
 	"sync/atomic"
 )
 
@@ -16,7 +17,6 @@ const (
 // rpc网络代理
 type RpcStub struct {
 	ServerType int
-	InstanceID int
 	RemoteIP   string
 	RemotePort int
 
@@ -26,6 +26,21 @@ type RpcStub struct {
 	netconn atomic.Value //network.Connection
 }
 
+type StubSortByIpPort []*RpcStub
+
+func (s StubSortByIpPort) Len() int {
+	return len(s)
+}
+func (s StubSortByIpPort) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+func (s StubSortByIpPort) Less(i, j int) bool {
+	return s[i].key() < s[j].key()
+}
+
+func (stub *RpcStub) key() string {
+	return fmt.Sprintf("%s:%d", stub.RemoteIP, stub.RemotePort)
+}
 func (stub *RpcStub) init() {
 	//初始化netconn进行网络连接
 	atrrib := map[interface{}]interface{}{}
@@ -139,7 +154,7 @@ func newRpcStubManager(rpcMgr *RpcManager, codecs []network.Codec, eventHandlers
 }
 
 // 添加一个代理管道
-func (mgr *RpcStubManger) addStub(serverType int, instanceId int, remoteIp string, remotePort int) bool {
+func (mgr *RpcStubManger) addStub(serverType int, remoteIp string, remotePort int) bool {
 	typeStubs, ok := mgr.typeStubMap[serverType]
 	if !ok {
 		typeStubs = &RpcServerTypeStubs{
@@ -151,43 +166,33 @@ func (mgr *RpcStubManger) addStub(serverType int, instanceId int, remoteIp strin
 
 	stub := &RpcStub{
 		ServerType: serverType,
-		InstanceID: instanceId,
 		RemoteIP:   remoteIp,
 		RemotePort: remotePort,
 		netcore:    mgr.netcore,
 	}
 	stub.init()
 
-	index := 0
-	for i, v := range typeStubs.stubs {
-		if v.InstanceID == stub.InstanceID {
-			return false
-		}
-		if v.InstanceID > stub.InstanceID {
-			index = i
-			break
-		}
-	}
-	// 按照InstanceID排序
-	typeStubs.stubs = append(typeStubs.stubs[:index], append([]*RpcStub{stub}, typeStubs.stubs[index:]...)...)
-	typeStubs.router.UpdateRoute(strconv.Itoa(stub.InstanceID), stub)
+	typeStubs.stubs = append(typeStubs.stubs, stub)
+	sort.Sort(StubSortByIpPort(typeStubs.stubs))
 
-	log.Debug("add rpc stub [%v:%v][%v:%v]", stub.ServerType, stub.InstanceID, stub.RemoteIP, stub.RemotePort)
+	typeStubs.router.UpdateRoute(stub.key(), stub)
+
+	log.Debug("add rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 	return true
 
 }
 
 // 删除一个代理管道
-func (mgr *RpcStubManger) delStub(serverType int, instanceId int) bool {
+func (mgr *RpcStubManger) delStub(serverType int, remoteIp string, remotePort int) bool {
 	typeStubs, ok := mgr.typeStubMap[serverType]
 	if ok {
 		for i, stub := range typeStubs.stubs {
-			if stub.InstanceID == instanceId {
+			if stub.RemoteIP == remoteIp && stub.RemotePort == remotePort {
 				typeStubs.stubs = append(typeStubs.stubs[:i], typeStubs.stubs[i+1:]...)
-				typeStubs.router.DelRoute(strconv.Itoa(instanceId))
+				typeStubs.router.DelRoute(stub.key())
 				stub.close()
 
-				log.Debug("delete rpc stub [%v:%v][%v:%v]", stub.ServerType, stub.InstanceID, stub.RemoteIP, stub.RemotePort)
+				log.Debug("delete rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 				return true
 			}
 		}
@@ -195,12 +200,32 @@ func (mgr *RpcStubManger) delStub(serverType int, instanceId int) bool {
 	return false
 }
 
+// 删除一个类型的代理管道
+func (mgr *RpcStubManger) delTypeStubs(serverType int) bool {
+	typeStubs, ok := mgr.typeStubMap[serverType]
+	if !ok {
+		return false
+	}
+	if len(typeStubs.stubs) <= 0 {
+		return false
+	}
+	for _, stub := range typeStubs.stubs {
+		typeStubs.router.DelRoute(stub.key())
+		stub.close()
+
+		log.Debug("delete rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
+	}
+
+	delete(mgr.typeStubMap, serverType)
+	return true
+}
+
 // 查询代理管道
-func (mgr *RpcStubManger) findStub(serverType int, instanceId int) *RpcStub {
+func (mgr *RpcStubManger) findStub(serverType int, remoteIP string, remotePort int) *RpcStub {
 	typeStubs, ok := mgr.typeStubMap[serverType]
 	if ok {
 		for _, stub := range typeStubs.stubs {
-			if stub.InstanceID == instanceId {
+			if stub.RemoteIP == remoteIP && stub.RemotePort == remotePort {
 				return stub
 			}
 		}

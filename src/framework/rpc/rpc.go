@@ -44,13 +44,12 @@ var (
 )
 
 type RpcEntry struct {
-	RpcMode         RpcModeType // rpc模式
-	CallId          int64       // rpc请求唯一ID
-	MsgId           int         // 消息ID
-	TargetSvrType   int         // 目标服务类型
-	TargetSvrInstId int         // 目标服务实例id
-	RouteKey        string      // 路由key
-	IsOneway        bool        // 是否单向通知
+	RpcMode       RpcModeType // rpc模式
+	CallId        int64       // rpc请求唯一ID
+	MsgId         int         // 消息ID
+	TargetSvrType int         // 目标服务类型
+	RouteKey      string      // 路由key
+	IsOneway      bool        // 是否单向通知
 
 	Timeout   time.Duration // 超时时间
 	WaitTimer *timer.Timer  // 超时定时器

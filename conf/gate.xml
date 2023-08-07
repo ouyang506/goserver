@@ -3,15 +3,14 @@
     <!-- gate监听客户端 -->
     <outer>
         <ip>0.0.0.0</ip>
-        <port>5000</port>
+        <port>5100</port>
     </outer>
 
     <!-- 服务注册 -->
     <registry>
         <server_type>1</server_type>
-        <instance_id>1</instance_id>
         <ip>127.0.0.1</ip>
-        <port>5100</port>
+        <port>5200</port>
     </registry>
 
     <!-- gate服务转发消息 -->

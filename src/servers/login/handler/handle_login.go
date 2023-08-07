@@ -39,5 +39,8 @@ func handlerAccountLogin(c *gin.Context) {
 	}
 	resp.ErrCode = ErrCodeSuccess
 	resp.ErrDesc = ErrDescSuccess
+	resp.GateIp = "127.0.0.1"
+	resp.GatePort = 5000
+	resp.Token = "token_test"
 	c.JSON(http.StatusOK, resp)
 }

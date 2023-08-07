@@ -66,19 +66,35 @@ func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler
 }
 
 // 添加一个代理管道(注册中心调用)
-func (mgr *RpcManager) AddStub(serverType int, instanceId int, remoteIp string, remotePort int) bool {
+func (mgr *RpcManager) AddStub(serverType int, remoteIp string, remotePort int) bool {
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	return mgr.rpcStubMgr.addStub(serverType, instanceId, remoteIp, remotePort)
+	return mgr.rpcStubMgr.addStub(serverType, remoteIp, remotePort)
 }
 
 // 删除一个代理管道(注册中心调用)
-func (mgr *RpcManager) DelStub(serverType int, instanceId int) bool {
+func (mgr *RpcManager) DelStub(serverType int, remoteIp string, remotePort int) bool {
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	return mgr.rpcStubMgr.delStub(serverType, instanceId)
+	return mgr.rpcStubMgr.delStub(serverType, remoteIp, remotePort)
+}
+
+// 删除目标类型的全部代理管道
+func (mgr *RpcManager) DelTypeStubs(serverType int) bool {
+	mgr.mutex.Lock()
+	defer mgr.mutex.Unlock()
+
+	return mgr.rpcStubMgr.delTypeStubs(serverType)
+}
+
+// 查询代理管道
+func (mgr *RpcManager) FindStub(serverType int, remoteIP string, remotePort int) *RpcStub {
+	mgr.mutex.Lock()
+	defer mgr.mutex.Unlock()
+
+	return mgr.rpcStubMgr.findStub(serverType, remoteIP, remotePort)
 }
 
 // 添加一个rpc到管理器
@@ -91,14 +107,9 @@ func (mgr *RpcManager) AddRpc(rpc *RpcEntry) bool {
 		log.Error("target server type error, TargetSvrType : %v", rpc.TargetSvrType)
 		return false
 	}
-
-	if rpc.TargetSvrInstId > 0 {
-		rpcStub = mgr.rpcStubMgr.findStub(rpc.TargetSvrType, rpc.TargetSvrInstId)
-	} else {
-		rpcStub = mgr.rpcStubMgr.selectStub(rpc)
-	}
+	rpcStub = mgr.rpcStubMgr.selectStub(rpc)
 	if rpcStub == nil {
-		log.Error("cannot find rpc stub, serverType : %v, instId : %v", rpc.TargetSvrType, rpc.TargetSvrInstId)
+		log.Error("cannot find rpc stub, serverType : %v", rpc.TargetSvrType)
 		return false
 	}
 
