@@ -16,7 +16,7 @@ func NewNetMgr() *NetMgr {
 }
 
 func (mgr *NetMgr) Start() {
-	rpc.InitRpc(rpc.RpcModeOuter, NewNetMessageEvent(), handler.NewMessageHandler())
+	rpc.InitRpc(rpc.RpcModeOuter, handler.NewMessageHandler(), rpc.WithNetEventHandler(NewNetEventHandler()))
 }
 
 func (mgr *NetMgr) RemoveGateStubs() {

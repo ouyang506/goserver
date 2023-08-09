@@ -1,0 +1,38 @@
+syntax = "proto2";
+package ss;
+
+//消息ID定义[范围10001-10100]
+enum ss_mysql_proxy{
+  msg_id_req_execute_sql  = 10001;
+}
+
+// mysql操作类型
+enum db_oper_type{
+  oper_query    = 1; // 查询
+  oper_execute  = 2; // 新增、更新或者删除操作
+}
+
+//mysql数据库操作请求
+message req_execute_sql{
+  optional db_oper_type type  = 1;
+  optional string       sql   = 2;
+}
+
+//mysql数据库操作返回
+message resp_execute_sql{
+  optional int32  err_code = 1;
+  optional string err_desc = 2;
+  optional int64  affected_count = 3;
+  optional int64  last_insert_id = 4;
+  optional query_result query_result = 5;
+}
+
+message one_column_data{
+  repeated string column_values = 1;
+}
+
+message query_result{
+  repeated string column_names = 1;
+  repeated one_column_data result = 2; 
+}
+

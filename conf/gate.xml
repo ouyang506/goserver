@@ -8,7 +8,6 @@
 
     <!-- 服务注册 -->
     <registry>
-        <server_type>1</server_type>
         <ip>127.0.0.1</ip>
         <port>5200</port>
     </registry>

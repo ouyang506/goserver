@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"framework/log"
 	"mysqlproxy/config"
+	"mysqlproxy/dbmgr"
 	"mysqlproxy/netmgr"
 	"os"
 	"sync"
@@ -24,16 +25,13 @@ func GetApp() *App {
 }
 
 type App struct {
-	conf   *config.Config
-	netMgr *netmgr.NetMgr
 }
 
 func (app *App) init() bool {
 	// init config
-	app.conf = config.NewConfig()
-	err := app.conf.Load("../../../conf/mysqlproxy.xml")
-	if err != nil {
-		fmt.Printf("Load config error, program exit! error message : %v", err)
+	conf := config.GetConfig()
+	if conf == nil {
+		fmt.Printf("load config error, program exit!")
 		os.Exit(1)
 	}
 
@@ -43,10 +41,6 @@ func (app *App) init() bool {
 	logger.AddSink(log.NewFileLogSink("mysqlproxy", "../../../logs/", log.RotateByHour))
 	logger.Start()
 	log.SetLogger(logger)
-
-	// init net manager
-	app.netMgr = netmgr.NewNetMgr(app.conf)
-	app.netMgr.Init(app.conf)
 
 	return true
 }
@@ -58,9 +52,10 @@ func (app *App) Start() {
 	log.Info("App Start ..")
 	// log app config info
 	log.Info("App config info :")
-	log.Info("%+v", app.conf)
+	log.Info("%+v", config.GetConfig())
 
-	app.netMgr.Start()
+	dbmgr.GetMysqlMgr().Start()
+	netmgr.GetNetMgr().Start()
 
 	for {
 		app.update()

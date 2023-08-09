@@ -11,11 +11,9 @@ var CSRpcMsg [][]any = [][]any{
 	{int(cs.CsGate_msg_id_req_heart_beat), &cs.ReqHeartBeat{}, &cs.RespHeartBeat{}},
 	{int(cs.CsGate_msg_id_req_login_gate), &cs.ReqLoginGate{}, &cs.RespLoginGate{}},
 	{int(cs.CsGate_msg_id_notify_tooltip), &cs.NotifyTooltip{}},
-	//cs_rank
-	{int(cs.CsRank_msg_id_req_query_rank_info), &cs.ReqQueryRankInfo{}, &cs.RespQueryRankInfo{}},
 }
 
 var SSRpcMsg [][]any = [][]any{
-	//ss_rank
-	{int(ss.SsRank_msg_id_req_sync_rank_score), &ss.ReqSyncRankScore{}, &ss.RespSyncRankScore{}},
+	//ss_mysql_proxy
+	{int(ss.SsMysqlProxy_msg_id_req_execute_sql), &ss.ReqExecuteSql{}, &ss.RespExecuteSql{}},
 }

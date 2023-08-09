@@ -2,33 +2,83 @@ package config
 
 import (
 	"encoding/xml"
+	"fmt"
 	"io"
 	"os"
+	"sync"
 )
 
+var (
+	once               = sync.Once{}
+	confMgr *ConfigMgr = nil
+)
+
+type ConfigMgr struct {
+	conf *Config
+}
+
+// singleton
+func GetConfigMgr() *ConfigMgr {
+	once.Do(func() {
+		confMgr = newConfigMgr()
+		conf := newConfig()
+		err := conf.load("../../../conf/mysqlproxy.xml")
+		if err != nil {
+			fmt.Printf("load config error: %v", err)
+		} else {
+			confMgr.conf = conf
+		}
+	})
+	return confMgr
+}
+
+func GetConfig() *Config {
+	return GetConfigMgr().conf
+}
+
+func newConfigMgr() *ConfigMgr {
+	mgr := &ConfigMgr{}
+	return mgr
+}
+
 type Config struct {
-	Registry  RegistryConfig `xml:"registry"`
-	MysqlConf MysqlConfig    `xml:"mysql"`
+	RegistryConf RegistryConfig `xml:"registry"`
+	ListenConf   ListenConfig   `xml:"listen"`
+	MysqlConf    MysqlConfig    `xml:"mysql"`
 }
 
 type RegistryConfig struct {
-	IP   string `xml:"ip,omitempty"`
-	Port int32  `xml:"port,omitempty"`
+	EtcdConf EtcdRegistryConfig `xml:"etcd,omitempty"`
 }
 
-type MysqlConfig struct {
-	Host     string `xml:"host,omitempty"`
-	Database string `xml:"database,omitempty"`
+type EtcdRegistryConfig struct {
+	Endpoints struct {
+		Items []string `xml:"item,omitempty"`
+	} `xml:"endpoints,omitempty"`
 	Username string `xml:"username,omitempty"`
 	Password string `xml:"password,omitempty"`
 }
 
-func NewConfig() *Config {
+type ListenConfig struct {
+	Ip   string `xml:"ip,omitempty"`
+	Port int    `xml:"port,omitempty"`
+}
+
+type MysqlConfig struct {
+	IP          string `xml:"ip,omitempty"`
+	Port        int    `xml:"port,omitempty"`
+	Database    string `xml:"database,omitempty"`
+	Username    string `xml:"username,omitempty"`
+	Password    string `xml:"password,omitempty"`
+	PoolMaxConn int    `xml:"pool_max_conn,omitempty"`
+}
+
+func newConfig() *Config {
 	conf := &Config{}
 	return conf
 }
 
-func (conf *Config) Load(fileName string) error {
+func (conf *Config) load(fileName string) error {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err

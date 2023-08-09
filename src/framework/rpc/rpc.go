@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"framework/consts"
-	"framework/network"
+	"framework/registry"
 	"utility/timer"
 
 	"framework/proto/pb"
@@ -60,18 +60,61 @@ type RpcEntry struct {
 }
 
 // 初始化rpc管理器
-func InitRpc(mode RpcModeType, eventHandler network.NetEventHandler, msgHandler any) {
-	rpcMgr := NewRpcManager(mode, eventHandler, msgHandler)
+func InitRpc(mode RpcModeType, msgHandler any, options ...Option) {
+	rpcMgr := NewRpcManager(mode, msgHandler, options...)
 	AddRpcManager(mode, rpcMgr)
 }
 
-// 提供监听服务
+func GetRpcManager(mode RpcModeType) *RpcManager {
+	rpcMgr, ok := rpcMgrMap.Load(mode)
+	if !ok {
+		return nil
+	}
+	return rpcMgr.(*RpcManager)
+}
+
+func AddRpcManager(mode RpcModeType, rpcMgr *RpcManager) {
+	rpcMgrMap.Store(mode, rpcMgr)
+}
+
+// 监听端口(不注册服务，eg: gateway的对外服务)
 func TcpListen(mode RpcModeType, ip string, port int) error {
 	rpcMgr := GetRpcManager(mode)
 	if rpcMgr == nil {
 		return ErrorRpcMgrNotFound
 	}
 	return rpcMgr.rpcStubMgr.netcore.TcpListen(ip, port)
+}
+
+// 注册服务
+func RegisterService(mode RpcModeType, regStub registry.Registry,
+	serverType int, ip string, port int) error {
+
+	rpcMgr := GetRpcManager(mode)
+	if rpcMgr == nil {
+		return ErrorRpcMgrNotFound
+	}
+
+	skey := registry.ServiceKey{
+		ServerType: serverType,
+		IP:         ip,
+		Port:       port,
+	}
+	rpcMgr.RegisterService(regStub, skey)
+	// 本服务开始监听
+	TcpListen(mode, ip, port)
+	return nil
+}
+
+// 注册服务到etcd
+func RegisterServiceToEtcd(mode RpcModeType, etcdConf registry.EtcdConfig,
+	serverType int, ip string, port int) error {
+	rpcMgr := GetRpcManager(mode)
+	if rpcMgr == nil {
+		return ErrorRpcMgrNotFound
+	}
+	regStub := registry.NewEtcdRegistry(etcdConf)
+	return RegisterService(mode, regStub, serverType, ip, port)
 }
 
 // rpc同步调用
@@ -160,16 +203,4 @@ func createRpc(rpcMode RpcModeType, targetSvrType int, req proto.Message,
 	}
 
 	return rpc
-}
-
-func GetRpcManager(mode RpcModeType) *RpcManager {
-	rpcMgr, ok := rpcMgrMap.Load(mode)
-	if !ok {
-		return nil
-	}
-	return rpcMgr.(*RpcManager)
-}
-
-func AddRpcManager(mode RpcModeType, rpcMgr *RpcManager) {
-	rpcMgrMap.Store(mode, rpcMgr)
 }

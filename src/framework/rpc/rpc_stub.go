@@ -179,7 +179,6 @@ func (mgr *RpcStubManger) addStub(serverType int, remoteIp string, remotePort in
 
 	log.Debug("add rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 	return true
-
 }
 
 // 删除一个代理管道

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
-    <http_listen ip="0.0.0.0" port = "5000"></http_listen>
+    <http_listen>
+		<ip>0.0.0.0</ip>
+		<port>5000</port>
+	</http_listen>
 </root>

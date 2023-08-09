@@ -155,12 +155,12 @@ func doParse(filepath string) {
 
 		// 解析MessageID
 		proto.WithEnum(func(e *proto.Enum) {
-			allMsgMapping[filepath].msgIdEnumName = e.Name
 			for _, elem := range e.Elements {
 				enumField := elem.(*proto.EnumField)
 				if !strings.HasPrefix(enumField.Name, "msg_id_") {
 					return
 				}
+				allMsgMapping[filepath].msgIdEnumName = e.Name
 				allMsgMapping[filepath].msgIdMap[enumField.Name[len("msg_id_"):]] = enumField.Integer
 			}
 		}),

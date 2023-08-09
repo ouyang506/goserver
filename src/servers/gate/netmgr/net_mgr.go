@@ -26,9 +26,7 @@ func (mgr *NetMgr) Init(conf *config.Config) {
 	mgr.msgHandler = handler.NewMessageHandler()
 
 	// startup rpc
-	netEventhandler := NewNetMessageEvent()
-	rpc.InitRpc(rpc.RpcModeOuter, netEventhandler, mgr.msgHandler)
-	netEventhandler.SetRpcMgr(rpc.GetRpcManager(rpc.RpcModeOuter))
+	rpc.InitRpc(rpc.RpcModeOuter, mgr.msgHandler, rpc.WithNetEventHandler(NewNetEventHandler()))
 }
 
 func (mgr *NetMgr) Start() {

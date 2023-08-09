@@ -4,6 +4,7 @@ import (
 	"framework/log"
 	"framework/network"
 	"framework/proto/pb"
+	"framework/registry"
 	"reflect"
 	"strings"
 	"sync"
@@ -22,6 +23,8 @@ type RpcManager struct {
 	timerMgr      *timer.TimerWheel
 
 	msgHandleMap map[int]reflect.Value
+
+	regMgr *registry.RegistryMgr
 }
 
 type PendingRpcEntry struct {
@@ -29,10 +32,12 @@ type PendingRpcEntry struct {
 	rpcStub *RpcStub
 }
 
-func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler,
-	msgHandler any) *RpcManager {
+func NewRpcManager(mode RpcModeType, msgHandler any,
+	options ...Option) *RpcManager {
 
 	mgr := &RpcManager{}
+
+	ops := LoadOptions(options...)
 
 	codecs := []network.Codec{}
 	handlers := []network.NetEventHandler{}
@@ -41,19 +46,29 @@ func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler
 	case RpcModeOuter:
 		codecs = append(codecs, NewOuterMessageCodec(mgr))
 		codecs = append(codecs, network.NewVariableFrameLenCodec())
+		if ops.NetEventHandler != nil {
+			handlers = append(handlers, ops.NetEventHandler)
+			ops.NetEventHandler.SetOwner(mgr)
+		} else {
+			outerEventHandler := NewOuterNetEventHandler()
+			outerEventHandler.SetOwner(mgr)
+			handlers = append(handlers, outerEventHandler)
+		}
 
-		outerEventHandler := NewOuterNetEvent(mgr)
-		handlers = append(handlers, outerEventHandler)
-		handlers = append(handlers, userNetEventHandler)
 	case RpcModeInner:
 		fallthrough
 	default:
 		codecs = append(codecs, NewInnerMessageCodec(mgr))
 		codecs = append(codecs, network.NewVariableFrameLenCodec())
 
-		innerEventHandler := NewInnerNetEvent(mgr)
-		handlers = append(handlers, innerEventHandler)
-		handlers = append(handlers, userNetEventHandler)
+		if ops.NetEventHandler != nil {
+			handlers = append(handlers, ops.NetEventHandler)
+			ops.NetEventHandler.SetOwner(mgr)
+		} else {
+			outerEventHandler := NewInnerNetEventHandler()
+			outerEventHandler.SetOwner(mgr)
+			handlers = append(handlers, outerEventHandler)
+		}
 	}
 
 	mgr.rpcStubMgr = newRpcStubManager(mgr, codecs, handlers)
@@ -63,6 +78,56 @@ func NewRpcManager(mode RpcModeType, userNetEventHandler network.NetEventHandler
 
 	mgr.SetMsgHandler(msgHandler)
 	return mgr
+}
+
+// 注册服务
+func (mgr *RpcManager) RegisterService(regStub registry.Registry, skey registry.ServiceKey) {
+	mgr.mutex.Lock()
+	defer mgr.mutex.Unlock()
+
+	handlerCB := func(oper registry.OperType, skey registry.ServiceKey) {
+		serverType, ip, port := skey.ServerType, skey.IP, skey.Port
+		if serverType == 0 || ip == "" || port == 0 {
+			log.Error("handler registry callback error, operate type: %v, key : %v", oper, skey)
+			return
+		}
+		if oper == registry.OperAdd {
+			mgr.AddStub(serverType, ip, port)
+		} else if oper == registry.OperDelete {
+			mgr.DelStub(serverType, ip, port)
+		}
+	}
+
+	mgr.regMgr = registry.NewRegistryMgr(regStub, handlerCB)
+	mgr.regMgr.DoRegister(skey, registry.RegistryDefaultTTL)
+}
+
+// 设置消息委托处理器
+func (mgr *RpcManager) SetMsgHandler(handler any) {
+	methodMap := make(map[int]reflect.Value)
+	refType := reflect.TypeOf(handler)
+	refValue := reflect.ValueOf(handler)
+	methodCount := refType.NumMethod()
+	for i := 0; i < methodCount; i++ {
+		methodName := refType.Method(i).Name
+		if !strings.HasPrefix(methodName, RpcHandlerMethodPrefix) {
+			continue
+		}
+		reqMsgName := methodName[len(RpcHandlerMethodPrefix):]
+		reqMsgId := pb.GetMsgIdByName(reqMsgName)
+		methodMap[reqMsgId] = refValue.Method(i)
+	}
+
+	mgr.msgHandleMap = methodMap
+}
+
+// 通过消息获取处理函数
+func (mgr *RpcManager) GetMsgHandlerFunc(msgId int) *reflect.Value {
+	method, ok := mgr.msgHandleMap[msgId]
+	if !ok {
+		return nil
+	}
+	return &method
 }
 
 // 添加一个代理管道(注册中心调用)
@@ -203,30 +268,4 @@ func (mgr *RpcManager) TcpSendMsg(connSessionId int64, msg any) error {
 		return err
 	}
 	return nil
-}
-
-func (mgr *RpcManager) SetMsgHandler(handler any) {
-	methodMap := make(map[int]reflect.Value)
-	refType := reflect.TypeOf(handler)
-	refValue := reflect.ValueOf(handler)
-	methodCount := refType.NumMethod()
-	for i := 0; i < methodCount; i++ {
-		methodName := refType.Method(i).Name
-		if !strings.HasPrefix(methodName, RpcHandlerMethodPrefix) {
-			continue
-		}
-		reqMsgName := methodName[len(RpcHandlerMethodPrefix):]
-		reqMsgId := pb.GetMsgIdByName(reqMsgName)
-		methodMap[reqMsgId] = refValue.Method(i)
-	}
-
-	mgr.msgHandleMap = methodMap
-}
-
-func (mgr *RpcManager) GetMsgHandlerFunc(msgId int) *reflect.Value {
-	method, ok := mgr.msgHandleMap[msgId]
-	if !ok {
-		return nil
-	}
-	return &method
 }

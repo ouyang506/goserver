@@ -1,13 +1,29 @@
 package registry
 
 import (
+	"fmt"
 	"framework/log"
 	"time"
 )
 
+const (
+	RegistryDefaultTTL = 15
+)
+
+// service unique key
+type ServiceKey struct {
+	ServerType int
+	IP         string
+	Port       int
+}
+
+func (skey ServiceKey) String() string {
+	return fmt.Sprintf("%d_%s_%d", skey.ServerType, skey.IP, skey.Port)
+}
+
 type Registry interface {
-	RegService(key string, value string, ttl uint32) error
-	GetServices() (map[string]string, error)
+	RegService(key ServiceKey, ttl uint32) error
+	GetServices() ([]ServiceKey, error)
 	Watch() (chan WatchEvent, error)
 }
 
@@ -15,59 +31,58 @@ type WatchEventType int
 
 const (
 	WatchEventTypeNone   WatchEventType = 0
-	WatchEventTypeUpdate WatchEventType = 1
+	WatchEventTypeAdd    WatchEventType = 1
 	WatchEventTypeDelete WatchEventType = 2
 )
 
 type WatchEvent struct {
 	err       error
 	eventType WatchEventType
-	key       string
-	value     string
+	skey      ServiceKey
 }
 
 type OperType int
 
 const (
-	OperUpdate OperType = 1
+	OperAdd    OperType = 1
 	OperDelete OperType = 2
 )
 
-type HandleServiceCb func(oper OperType, key string, value string)
+type HandleServiceCb func(oper OperType, skey ServiceKey)
 
 type RegistryMgr struct {
-	logger   log.Logger
 	stub     Registry
-	services map[string]string
+	services map[ServiceKey]any
 	cb       HandleServiceCb
 }
 
-func NewRegistryMgr(logger log.Logger, stub Registry, cb HandleServiceCb) *RegistryMgr {
-
+func NewRegistryMgr(stub Registry, cb HandleServiceCb) *RegistryMgr {
 	mgr := &RegistryMgr{
-		logger:   logger,
 		stub:     stub,
-		services: make(map[string]string),
+		services: make(map[ServiceKey]any),
 		cb:       cb,
 	}
-
 	return mgr
 }
 
-func (mgr *RegistryMgr) DoRegister(key string, value string, ttl uint32) {
+func (mgr *RegistryMgr) DoRegister(skey ServiceKey, ttl uint32) {
 	//register self
-	go mgr.regService(key, value, ttl)
+	go mgr.regService(skey, ttl)
 
 	// watch service change event
 	go mgr.watch()
 }
 
-func (mgr *RegistryMgr) regService(key, value string, ttl uint32) {
+func (mgr *RegistryMgr) regService(skey ServiceKey, ttl uint32) {
 	for {
-		err := mgr.stub.RegService(key, value, ttl)
+		err := mgr.stub.RegService(skey, ttl)
 		if err != nil {
-			mgr.logger.LogError("RegService error : %s", err)
-			time.Sleep(1 * time.Second)
+			log.Error("RegService error : %s", err)
+			delta := ttl / 2
+			if delta < 1 {
+				delta = 1
+			}
+			time.Sleep(time.Duration(delta) * time.Second)
 			continue
 		}
 	}
@@ -79,70 +94,62 @@ func (mgr *RegistryMgr) watch() {
 
 		watchChan, err := mgr.stub.Watch()
 		if err != nil {
-			mgr.logger.LogError("watch error : %s", err)
+			log.Error("watch error : %s", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
-		serviceMap, err := mgr.stub.GetServices()
+		services, err := mgr.stub.GetServices()
 		if err != nil {
-			mgr.logger.LogError("get services error : %s", err)
+			log.Error("get services error : %s", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
-		for k, v := range serviceMap {
-			mgr.services[k] = v
+		for _, v := range services {
+			mgr.services[v] = nil
 		}
 
 		for event := range watchChan {
-			if event.eventType == WatchEventTypeUpdate {
-				mgr.onServiceUpdate(event.key, event.value)
+			if event.eventType == WatchEventTypeAdd {
+				mgr.onServiceAdd(event.skey)
 			} else if event.eventType == WatchEventTypeDelete {
-				mgr.onServiceDelete(event.key)
+				mgr.onServiceDelete(event.skey)
 			}
 		}
 	}
 }
 
 func (mgr *RegistryMgr) clearAllServices() {
-	mgr.logger.LogDebug("registry manager clear all service : %+v", mgr.services)
+	log.Info("registry manager clear all service : %+v", mgr.services)
 
 	if len(mgr.services) <= 0 {
 		return
 	}
 
-	for k, v := range mgr.services {
-		mgr.cb(OperDelete, k, v)
+	for k := range mgr.services {
+		mgr.cb(OperDelete, k)
 	}
 
-	mgr.services = map[string]string{}
+	mgr.services = map[ServiceKey]any{}
 }
 
-func (mgr *RegistryMgr) onServiceUpdate(key, value string) {
-	data, ok := mgr.services[key]
+func (mgr *RegistryMgr) onServiceAdd(skey ServiceKey) {
+	_, ok := mgr.services[skey]
 	if !ok {
-		mgr.logger.LogDebug("registry manager on add service, key:%v, value:%v", key, value)
-		mgr.services[key] = value
-		mgr.cb(OperUpdate, key, value)
-	} else {
-		if data == value {
-			//pass
-		} else {
-			mgr.logger.LogDebug("registry manager on update service, key:%v, value:%v", key, value)
-			mgr.services[key] = value
-			mgr.cb(OperUpdate, key, value)
-		}
+		log.Info("registry manager on add service %v", skey)
+		mgr.services[skey] = nil
+		mgr.cb(OperAdd, skey)
 	}
 }
 
-func (mgr *RegistryMgr) onServiceDelete(key string) {
-	data, ok := mgr.services[key]
+func (mgr *RegistryMgr) onServiceDelete(skey ServiceKey) {
+	_, ok := mgr.services[skey]
 	if !ok {
-		//pass
+		log.Info("registry manager on delete service not found, skey:%v", skey)
 	} else {
-		mgr.logger.LogDebug("registry manager on delete service, key:%v", key)
-		delete(mgr.services, key)
-		mgr.cb(OperDelete, key, data)
+		log.Info("registry manager on delete service %v", skey)
+		delete(mgr.services, skey)
+		mgr.cb(OperDelete, skey)
 	}
 }

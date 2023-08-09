@@ -1,7 +1,7 @@
 package consts
 
 const (
-	ServerTypeGate int = 1
-	ServerTypeGame int = 2
-	ServerTypeDB   int = 3
+	ServerTypeGate       int = 1
+	ServerTypeLogin      int = 2
+	ServerTypeMysqlProxy int = 3
 )

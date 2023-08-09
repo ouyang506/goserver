@@ -1,16 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
     <!-- 服务注册 -->
-    <registry>
+	<registry>
+		<etcd>
+			<endpoints>
+				<item>127.0.0.1:2378</item>
+				<item>127.0.0.1:2379</item>
+				<item>127.0.0.1:2380</item>
+			</endpoints>
+			<username></username>
+			<password></password>
+		</etcd>
+	</registry>
+	
+	<!-- 服务监听 -->
+    <listen>
         <ip>127.0.0.1</ip>
         <port>5300</port>
-    </registry>
+    </listen>
 	
 	<!-- mysql配置 -->
 	<mysql>
-        <host>127.0.0.1</host>
+        <ip>127.0.0.1</ip>
+		<port>3306</port>
 		<database>game</database>
         <username>root</username>
 		<password>123456</password>
+		<pool_max_conn>10</pool_max_conn>
     </mysql>
 </root>
