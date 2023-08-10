@@ -13,7 +13,6 @@ import (
 	"utility/timer"
 
 	"framework/proto/pb"
-	_ "framework/proto/pb"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -38,7 +37,7 @@ const (
 
 var (
 	DefaultRpcTimeout = time.Second * 3
-	nextRpcCallId     = int64(10000)
+	nextRpcCallId     = int64(1000000)
 
 	rpcMgrMap sync.Map = sync.Map{} //RpcModeType->*RpcManager
 )
@@ -65,6 +64,7 @@ func InitRpc(mode RpcModeType, msgHandler any, options ...Option) {
 	AddRpcManager(mode, rpcMgr)
 }
 
+// 根据类型获取rpc管理器
 func GetRpcManager(mode RpcModeType) *RpcManager {
 	rpcMgr, ok := rpcMgrMap.Load(mode)
 	if !ok {
@@ -77,7 +77,7 @@ func AddRpcManager(mode RpcModeType, rpcMgr *RpcManager) {
 	rpcMgrMap.Store(mode, rpcMgr)
 }
 
-// 监听端口(不注册服务，eg: gateway的对外服务)
+// 监听端口
 func TcpListen(mode RpcModeType, ip string, port int) error {
 	rpcMgr := GetRpcManager(mode)
 	if rpcMgr == nil {
@@ -87,7 +87,7 @@ func TcpListen(mode RpcModeType, ip string, port int) error {
 }
 
 // 注册服务
-func RegisterService(mode RpcModeType, regStub registry.Registry,
+func RegisterService(mode RpcModeType, reg registry.Registry,
 	serverType int, ip string, port int) error {
 
 	rpcMgr := GetRpcManager(mode)
@@ -100,21 +100,18 @@ func RegisterService(mode RpcModeType, regStub registry.Registry,
 		IP:         ip,
 		Port:       port,
 	}
-	rpcMgr.RegisterService(regStub, skey)
-	// 本服务开始监听
-	TcpListen(mode, ip, port)
+	rpcMgr.RegisterService(reg, skey)
 	return nil
 }
 
-// 注册服务到etcd
-func RegisterServiceToEtcd(mode RpcModeType, etcdConf registry.EtcdConfig,
-	serverType int, ip string, port int) error {
+// 获取注册中心服务以及监听服务变化事件
+func FetchWatchService(mode RpcModeType, reg registry.Registry) error {
 	rpcMgr := GetRpcManager(mode)
 	if rpcMgr == nil {
 		return ErrorRpcMgrNotFound
 	}
-	regStub := registry.NewEtcdRegistry(etcdConf)
-	return RegisterService(mode, regStub, serverType, ip, port)
+	rpcMgr.FetchWatchService(reg)
+	return nil
 }
 
 // rpc同步调用

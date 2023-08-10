@@ -6,6 +6,7 @@ import (
 	"framework/log"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -15,9 +16,12 @@ const (
 	EtcdBasePath = "/services/"
 )
 
+// Registry Interface Implementment
 type EtcdRegistry struct {
-	etcdCfg    *clientv3.Config
-	etcdClient *clientv3.Client
+	etcdCfg *clientv3.Config
+
+	etcdClient   *clientv3.Client
+	etcdClientMu sync.Mutex
 }
 
 type EtcdConfig struct {
@@ -27,7 +31,6 @@ type EtcdConfig struct {
 }
 
 func NewEtcdRegistry(conf EtcdConfig) *EtcdRegistry {
-
 	etcdRegistry := &EtcdRegistry{
 		etcdCfg: &clientv3.Config{
 			Endpoints:   conf.Endpoints,
@@ -35,13 +38,70 @@ func NewEtcdRegistry(conf EtcdConfig) *EtcdRegistry {
 			Username:    conf.Username,
 			Password:    conf.Password,
 		},
-		etcdClient: nil,
 	}
 
 	return etcdRegistry
 }
 
+func (reg *EtcdRegistry) RegService(skey ServiceKey) {
+	go func() {
+		for {
+			err := reg.doRegService(skey, RegistryDefaultTTL)
+			if err != nil {
+				log.Error("doRegService return error, %s", err)
+				time.Sleep(time.Millisecond * time.Duration(500))
+				continue
+			}
+		}
+	}()
+}
+
+func (reg *EtcdRegistry) FetchAndWatchService(cb WatchCallback) {
+	go func() {
+		var revision int64
+		var services []ServiceKey
+		var err error
+
+		for {
+			services, revision, err = reg.getServices()
+			if err != nil {
+				log.Error("get services error : %s", err)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			for _, skey := range services {
+				cb(WatchEventTypeAdd, skey)
+			}
+			break
+		}
+
+		//watch events after the revison
+		revision += 1
+
+		for {
+			err := reg.doWatch(&revision, cb)
+			if err != nil {
+				log.Error("do watch error, %v", err)
+				continue
+			}
+		}
+	}()
+}
+
+func (reg *EtcdRegistry) Close() {
+	reg.etcdClientMu.Lock()
+	defer reg.etcdClientMu.Unlock()
+
+	if reg.etcdClient != nil {
+		reg.etcdClient.Close()
+		reg.etcdClient = nil
+	}
+}
+
 func (reg *EtcdRegistry) lazyInit() error {
+	reg.etcdClientMu.Lock()
+	defer reg.etcdClientMu.Unlock()
+
 	if reg.etcdClient == nil {
 		cli, err := clientv3.New(*reg.etcdCfg)
 		if err != nil {
@@ -52,36 +112,13 @@ func (reg *EtcdRegistry) lazyInit() error {
 	return nil
 }
 
-// func (reg *EtcdRegistry) close() {
-// 	if reg.etcdClient != nil {
-// 		reg.etcdClient.Close()
-// 		reg.etcdClient = nil
-// 	}
-// }
-
-func (reg *EtcdRegistry) makeKey(skey ServiceKey) string {
-	return fmt.Sprintf("%d_%s_%d", skey.ServerType, skey.IP, skey.Port)
-}
-
-func (reg *EtcdRegistry) parseKey(key string) (ServiceKey, error) {
-	key = strings.TrimPrefix(key, EtcdBasePath)
-	skey := ServiceKey{}
-	splits := strings.Split(key, "_")
-	if len(splits) == 3 {
-		skey.ServerType, _ = strconv.Atoi(splits[0])
-		skey.IP = splits[1]
-		skey.Port, _ = strconv.Atoi(splits[2])
-	}
-	return skey, nil
-}
-
-func (reg *EtcdRegistry) RegService(skey ServiceKey, ttl uint32) error {
+func (reg *EtcdRegistry) doRegService(skey ServiceKey, ttl uint32) error {
 	if err := reg.lazyInit(); err != nil {
 		log.Error("init etcd client error : %s", err)
 		return err
 	}
 
-	leaseCtx, leaseCancel := context.WithTimeout(context.Background(), time.Second*time.Duration(ttl))
+	leaseCtx, leaseCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer leaseCancel()
 	lease := clientv3.NewLease(reg.etcdClient)
 	leaseResp, err := lease.Grant(leaseCtx, int64(ttl))
@@ -93,14 +130,18 @@ func (reg *EtcdRegistry) RegService(skey ServiceKey, ttl uint32) error {
 
 	kv := clientv3.NewKV(reg.etcdClient)
 
-	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), time.Duration(ttl*1000)*time.Millisecond)
+	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), 3*time.Second)
 	defer kvCancelFunc()
 	_, err = kv.Put(kvCtx, EtcdBasePath+reg.makeKey(skey), "", clientv3.WithLease(leaseId))
 	if err != nil {
 		return err
 	}
 
-	tick := time.NewTicker(time.Duration(ttl*1000/10) * time.Millisecond)
+	delta := RegistryDefaultTTL / 2
+	if delta < 1 {
+		delta = 1
+	}
+	tick := time.NewTicker(time.Second * time.Duration(delta))
 	defer tick.Stop()
 	for {
 		<-tick.C
@@ -126,19 +167,19 @@ func (reg *EtcdRegistry) renewLease(leaseId clientv3.LeaseID) error {
 	return nil
 }
 
-func (reg *EtcdRegistry) GetServices() ([]ServiceKey, error) {
+func (reg *EtcdRegistry) getServices() ([]ServiceKey, int64, error) {
 	if err := reg.lazyInit(); err != nil {
 		log.Error("init etcd client error : %s", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), time.Duration(1000)*time.Millisecond)
+	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), time.Duration(5)*time.Second)
 	defer kvCancelFunc()
 
 	kv := clientv3.NewKV(reg.etcdClient)
 	resp, err := kv.Get(kvCtx, EtcdBasePath, clientv3.WithPrefix())
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	skeyMap := make(map[ServiceKey]any)
@@ -156,68 +197,72 @@ func (reg *EtcdRegistry) GetServices() ([]ServiceKey, error) {
 			skeyMap[skey] = nil
 		}
 	}
-	return ret, nil
+	revision := resp.Header.Revision
+	return ret, revision, nil
 }
 
-func (reg *EtcdRegistry) Watch() (chan WatchEvent, error) {
+func (reg *EtcdRegistry) doWatch(revision *int64, cb WatchCallback) error {
 	if err := reg.lazyInit(); err != nil {
 		log.Error("init etcd client error : %s", err)
-		return nil, err
+		return err
 	}
 
 	watcher := clientv3.NewWatcher(reg.etcdClient)
-	//defer watcher.Close()
+	defer watcher.Close()
 
-	watchCtx := context.Background()
-	watchChann := watcher.Watch(watchCtx, EtcdBasePath, clientv3.WithPrefix())
+	watchChann := watcher.Watch(context.Background(), EtcdBasePath,
+		clientv3.WithPrefix(), clientv3.WithRev(*revision))
 
-	retChan := make(chan WatchEvent)
-	go func() {
-		for {
-			watchResp, ok := <-watchChann
-			if !ok {
-				retChan <- WatchEvent{
-					err: fmt.Errorf("channel closed"),
-				}
-				close(retChan)
-				return
-			}
+	for {
+		watchResp, ok := <-watchChann
+		if !ok {
+			return fmt.Errorf("watch channel closed")
+		}
 
-			if err := watchResp.Err(); err != nil {
-				retChan <- WatchEvent{
-					err: err,
-				}
-				close(retChan)
-				return
-			}
+		if err := watchResp.Err(); err != nil {
+			return err
+		}
 
-			if watchResp.Events == nil {
+		// assign the new revision for the cycle watch
+		*revision = watchResp.Header.Revision
+
+		for _, event := range watchResp.Events {
+			var eventType WatchEventType
+			switch event.Type {
+			case clientv3.EventTypePut:
+				eventType = WatchEventTypeAdd
+			case clientv3.EventTypeDelete:
+				eventType = WatchEventTypeDelete
+			default:
+				log.Error("invalid event type : %v", event.Type)
 				continue
 			}
+			log.Debug("Resp.Header.Revision = %v, create_version = %v , mod_version = %v ,eventType = %v, key = %v, value = %v",
+				watchResp.Header.Revision, event.Kv.CreateRevision, event.Kv.ModRevision, eventType,
+				string(event.Kv.Key), string(event.Kv.Value))
 
-			for _, event := range watchResp.Events {
-				eventType := WatchEventTypeNone
-				if event.Type == clientv3.EventTypePut {
-					eventType = WatchEventTypeAdd
-				} else if event.Type == clientv3.EventTypeDelete {
-					eventType = WatchEventTypeDelete
-				} else {
-					continue //不存在此类情况
-				}
-
-				skey, err := reg.parseKey(string(event.Kv.Key))
-				if err != nil {
-					log.Error("parse service key error: %v, event type : %v", err, clientv3.EventTypePut)
-				}
-
-				retChan <- WatchEvent{
-					err:       nil,
-					eventType: eventType,
-					skey:      skey,
-				}
+			skey, err := reg.parseKey(string(event.Kv.Key))
+			if err != nil {
+				log.Error("parse service key error: %v, event key : %v", err, string(event.Kv.Key))
+				continue
 			}
+			cb(eventType, skey)
 		}
-	}()
+	}
+}
 
-	return retChan, nil
+func (reg *EtcdRegistry) makeKey(skey ServiceKey) string {
+	return fmt.Sprintf("%d_%s_%d", skey.ServerType, skey.IP, skey.Port)
+}
+
+func (reg *EtcdRegistry) parseKey(key string) (ServiceKey, error) {
+	key = strings.TrimPrefix(key, EtcdBasePath)
+	skey := ServiceKey{}
+	splits := strings.Split(key, "_")
+	if len(splits) == 3 {
+		skey.ServerType, _ = strconv.Atoi(splits[0])
+		skey.IP = splits[1]
+		skey.Port, _ = strconv.Atoi(splits[2])
+	}
+	return skey, nil
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"common"
 	"fmt"
 	"framework/log"
 	"mysqlproxy/config"
@@ -59,11 +60,20 @@ func (app *App) Start() {
 
 	for {
 		app.update()
-		time.Sleep(time.Millisecond * 20)
+		time.Sleep(time.Millisecond * 20 * 10000)
 	}
 }
 
 // main loop
 func (app *App) update() {
-
+	time.Sleep(5 * time.Second)
+	result, err := common.QuerySQL("select * from account where username = ?", "admin")
+	log.Debug("result: %+v, err: %v", result, err)
+	// if err != nil {
+	// 	for _, row := range result.Rows {
+	// 		for _, field := range row {
+	// 			log.Debug("%v", field.String())
+	// 		}
+	// 	}
+	// }
 }

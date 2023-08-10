@@ -7,6 +7,9 @@
 			"path": "framework"
 		},
 		{
+			"path": "common"
+		},
+		{
 			"name": "mockclient",
 			"path": "clients\\mockclient"
 		},

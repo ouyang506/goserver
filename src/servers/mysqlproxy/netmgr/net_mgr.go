@@ -32,17 +32,22 @@ func NewNetMgr() *NetMgr {
 }
 
 func (mgr *NetMgr) Start() {
+	conf := config.GetConfig()
+
 	// startup rpc
 	netEventhandler := NewNetEventHandler()
 	msgHandler := handler.NewMessageHandler()
 	rpc.InitRpc(rpc.RpcModeInner, msgHandler, rpc.WithNetEventHandler(netEventhandler))
+	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 
-	conf := config.GetConfig()
 	etcdConf := registry.EtcdConfig{
 		Endpoints: conf.RegistryConf.EtcdConf.Endpoints.Items,
 		Username:  conf.RegistryConf.EtcdConf.Username,
 		Password:  conf.RegistryConf.EtcdConf.Password,
 	}
-	rpc.RegisterServiceToEtcd(rpc.RpcModeInner, etcdConf,
+
+	regCenter := registry.NewEtcdRegistry(etcdConf)
+	rpc.RegisterService(rpc.RpcModeInner, regCenter,
 		consts.ServerTypeMysqlProxy, conf.ListenConf.Ip, conf.ListenConf.Port)
+	rpc.FetchWatchService(rpc.RpcModeInner, regCenter)
 }

@@ -23,8 +23,6 @@ type RpcManager struct {
 	timerMgr      *timer.TimerWheel
 
 	msgHandleMap map[int]reflect.Value
-
-	regMgr *registry.RegistryMgr
 }
 
 type PendingRpcEntry struct {
@@ -81,25 +79,27 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 }
 
 // 注册服务
-func (mgr *RpcManager) RegisterService(regStub registry.Registry, skey registry.ServiceKey) {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
+func (mgr *RpcManager) RegisterService(regMgr registry.Registry, skey registry.ServiceKey) {
+	regMgr.RegService(skey)
+}
 
-	handlerCB := func(oper registry.OperType, skey registry.ServiceKey) {
-		serverType, ip, port := skey.ServerType, skey.IP, skey.Port
-		if serverType == 0 || ip == "" || port == 0 {
-			log.Error("handler registry callback error, operate type: %v, key : %v", oper, skey)
-			return
-		}
-		if oper == registry.OperAdd {
-			mgr.AddStub(serverType, ip, port)
-		} else if oper == registry.OperDelete {
-			mgr.DelStub(serverType, ip, port)
-		}
+// 监视注册中心服务
+func (mgr *RpcManager) FetchWatchService(regMgr registry.Registry) {
+	regMgr.FetchAndWatchService(mgr.registryCallback)
+}
+
+// 注册中心服务变化回调
+func (mgr *RpcManager) registryCallback(oper registry.WatchEventType, skey registry.ServiceKey) {
+	serverType, ip, port := skey.ServerType, skey.IP, skey.Port
+	if serverType == 0 || ip == "" || port == 0 {
+		log.Error("handler registry callback error, operate type: %v, key : %v", oper, skey)
+		return
 	}
-
-	mgr.regMgr = registry.NewRegistryMgr(regStub, handlerCB)
-	mgr.regMgr.DoRegister(skey, registry.RegistryDefaultTTL)
+	if oper == registry.WatchEventTypeAdd {
+		mgr.AddStub(serverType, ip, port)
+	} else if oper == registry.WatchEventTypeDelete {
+		mgr.DelStub(serverType, ip, port)
+	}
 }
 
 // 设置消息委托处理器

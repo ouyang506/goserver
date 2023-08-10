@@ -3,6 +3,7 @@ go 1.20
 use (
 	./utility
 	./framework
+	./common
 	./clients/mockclient
 	./servers/gate
 	./servers/login
@@ -12,3 +13,4 @@ use (
 
 replace utility v0.0.0 => ./utility/
 replace framework v0.0.0 => ./framework/
+replace common v0.0.0 => ./common/

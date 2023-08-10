@@ -42,7 +42,7 @@ func (mgr *MysqlMgr) Start() {
 
 func (mgr *MysqlMgr) doConnect() {
 	conf := config.GetConfig()
-	dataSource := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s",
+	dataSource := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=false",
 		conf.MysqlConf.Username, conf.MysqlConf.Password,
 		conf.MysqlConf.IP, conf.MysqlConf.Port, conf.MysqlConf.Database, MysqlCharset)
 	var err error = nil
@@ -55,6 +55,7 @@ func (mgr *MysqlMgr) doConnect() {
 	mgr.db.SetMaxIdleConns(int(conf.MysqlConf.PoolMaxConn / 2))
 }
 
+// query
 func (mgr *MysqlMgr) QuerySql(sql string, args ...any) (columns []string, result [][]string, err error) {
 	stmt, err := mgr.db.Prepare(sql)
 	if err != nil {
@@ -83,7 +84,7 @@ func (mgr *MysqlMgr) QuerySql(sql string, args ...any) (columns []string, result
 	}
 	for row.Next() {
 		err = row.Scan(dstptr...)
-		if err == nil {
+		if err != nil {
 			log.Error("scan error: %v", err)
 			return
 		}
@@ -94,6 +95,8 @@ func (mgr *MysqlMgr) QuerySql(sql string, args ...any) (columns []string, result
 			switch tmp := v.(type) {
 			case string:
 				valueStr = tmp
+			case []byte:
+				valueStr = string(tmp)
 			case int, int8, int16, int32, int64, uint, uint8, uint32, uint64:
 				valueStr = fmt.Sprintf("%v", v)
 			default:
@@ -108,6 +111,7 @@ func (mgr *MysqlMgr) QuerySql(sql string, args ...any) (columns []string, result
 	return
 }
 
+// insert , delete , update
 func (mgr *MysqlMgr) ExecuteSql(sql string, args ...any) (lastInsertId int64, rowsAffected int64, err error) {
 	stmt, err := mgr.db.Prepare(sql)
 	if err != nil {

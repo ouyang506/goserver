@@ -3,7 +3,6 @@ package rpc
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"framework/network"
 	"framework/proto/pb"
 
@@ -19,8 +18,9 @@ type InnerMessageHead struct {
 
 // 服务器内部协议
 type InnerMessage struct {
-	Head  InnerMessageHead
-	PbMsg proto.Message
+	Head    InnerMessageHead
+	PbMsg   proto.Message
+	Content []byte
 }
 
 // 服务器内部解析器
@@ -65,25 +65,32 @@ func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (inter
 	skip += 8
 	msg.Head.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
 	skip += 4
-
-	var pb proto.Message = nil
-	// switch msg.Head.MsgID {
-	// case int(pbmsg.MsgID_login_gate_req):
-	// 	pb = &pbmsg.LoginGateReqT{}
-	// case int(pbmsg.MsgID_login_gate_resp):
-	// 	pb = &pbmsg.LoginGateRespT{}
-	// default:
-	// }
-
-	if pb == nil {
-		return nil, false, fmt.Errorf("can not find pb message by id : %v", msg.Head.MsgID)
+	msg.Content = innerMsgBytes[skip:]
+	if msg.Head.MsgID == 0 {
+		//rpc response
+		rpcEntry := cc.rpcMgr.GetRpc(msg.Head.CallId)
+		//respMsg := proto.Clone(rpcEntry.RespMsg)
+		err := proto.Unmarshal(msg.Content, rpcEntry.RespMsg)
+		if err != nil {
+			//log error
+		} else {
+			msg.PbMsg = rpcEntry.RespMsg
+		}
+	} else if msg.Head.MsgID > 0 {
+		reqMsg, _ := pb.GetProtoMsgById(msg.Head.MsgID)
+		if reqMsg == nil {
+			// log error
+		}
+		err := proto.Unmarshal(msg.Content, reqMsg)
+		if err != nil {
+			//log error
+		} else {
+			msg.PbMsg = reqMsg
+		}
+	} else {
+		// message id error
 	}
 
-	err := proto.Unmarshal(innerMsgBytes[skip:], pb)
-	if err != nil {
-		return nil, false, err
-	}
-	msg.PbMsg = pb
 	return msg, true, nil
 }
 

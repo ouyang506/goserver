@@ -14,8 +14,9 @@ enum db_oper_type{
 
 //mysql数据库操作请求
 message req_execute_sql{
-  optional db_oper_type type  = 1;
-  optional string       sql   = 2;
+  optional db_oper_type type   = 1;
+  optional string       sql    = 2;
+  optional string       params = 3;
 }
 
 //mysql数据库操作返回
@@ -24,15 +25,15 @@ message resp_execute_sql{
   optional string err_desc = 2;
   optional int64  affected_count = 3;
   optional int64  last_insert_id = 4;
-  optional query_result query_result = 5;
+  optional mysql_query_result query_result = 5;
 }
 
-message one_column_data{
-  repeated string column_values = 1;
+message mysql_result_row{
+  repeated string values = 1;
 }
 
-message query_result{
-  repeated string column_names = 1;
-  repeated one_column_data result = 2; 
+message mysql_query_result{
+  repeated string                 columns   = 1;
+  repeated mysql_result_row  rows      = 2; 
 }
 

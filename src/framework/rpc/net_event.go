@@ -18,8 +18,8 @@ type RpcNetEventHandlerBase struct {
 	owner *RpcManager
 }
 
-func (h *RpcNetEventHandlerBase) SetOwner(*RpcManager) {
-
+func (h *RpcNetEventHandlerBase) SetOwner(owner *RpcManager) {
+	h.owner = owner
 }
 
 func (h *RpcNetEventHandlerBase) GetOwner() *RpcManager {
