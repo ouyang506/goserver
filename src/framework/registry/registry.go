@@ -1,7 +1,7 @@
 package registry
 
 const (
-	RegistryDefaultTTL = 120
+	RegistryDefaultTTL = 15
 )
 
 // service unique key

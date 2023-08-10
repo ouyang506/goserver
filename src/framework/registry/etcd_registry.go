@@ -49,7 +49,7 @@ func (reg *EtcdRegistry) RegService(skey ServiceKey) {
 			err := reg.doRegService(skey, RegistryDefaultTTL)
 			if err != nil {
 				log.Error("doRegService return error, %s", err)
-				time.Sleep(time.Millisecond * time.Duration(500))
+				time.Sleep(time.Second * 1)
 				continue
 			}
 		}
@@ -125,9 +125,10 @@ func (reg *EtcdRegistry) doRegService(skey ServiceKey, ttl uint32) error {
 	if err != nil {
 		return err
 	}
+	//不收回，避免续约失败后的服务间网络波动
+	//defer lease.Revoke(context.Background(), leaseResp.ID)
 
 	leaseId := leaseResp.ID
-
 	kv := clientv3.NewKV(reg.etcdClient)
 
 	kvCtx, kvCancelFunc := context.WithTimeout(context.Background(), 3*time.Second)
@@ -137,34 +138,17 @@ func (reg *EtcdRegistry) doRegService(skey ServiceKey, ttl uint32) error {
 		return err
 	}
 
-	delta := RegistryDefaultTTL / 2
-	if delta < 1 {
-		delta = 1
-	}
-	tick := time.NewTicker(time.Second * time.Duration(delta))
-	defer tick.Stop()
-	for {
-		<-tick.C
-		if err := reg.renewLease(leaseId); err != nil {
-			return err
-		}
-	}
-}
-
-func (reg *EtcdRegistry) renewLease(leaseId clientv3.LeaseID) error {
-	if err := reg.lazyInit(); err != nil {
-		log.Error("init etcd client error : %s", err)
-		return err
-	}
-
-	leaseCtx, leaseCancel := context.WithTimeout(context.Background(), time.Duration(1000)*time.Millisecond)
-	defer leaseCancel()
-	lease := clientv3.NewLease(reg.etcdClient)
-	_, err := lease.KeepAliveOnce(leaseCtx, leaseId)
+	aliveRespChan, err := lease.KeepAlive(context.Background(), leaseId)
 	if err != nil {
 		return err
 	}
-	return nil
+
+	for {
+		_, ok := <-aliveRespChan
+		if !ok {
+			return fmt.Errorf("keepalive channel closed")
+		}
+	}
 }
 
 func (reg *EtcdRegistry) getServices() ([]ServiceKey, int64, error) {
@@ -237,9 +221,9 @@ func (reg *EtcdRegistry) doWatch(revision *int64, cb WatchCallback) error {
 				log.Error("invalid event type : %v", event.Type)
 				continue
 			}
-			log.Debug("Resp.Header.Revision = %v, create_version = %v , mod_version = %v ,eventType = %v, key = %v, value = %v",
-				watchResp.Header.Revision, event.Kv.CreateRevision, event.Kv.ModRevision, eventType,
-				string(event.Kv.Key), string(event.Kv.Value))
+			// log.Debug("Resp.Header.Revision = %v, create_version = %v , mod_version = %v ,eventType = %v, key = %v, value = %v",
+			// 	watchResp.Header.Revision, event.Kv.CreateRevision, event.Kv.ModRevision, eventType,
+			// 	string(event.Kv.Key), string(event.Kv.Value))
 
 			skey, err := reg.parseKey(string(event.Kv.Key))
 			if err != nil {
