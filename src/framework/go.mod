@@ -4,7 +4,8 @@ go 1.20
 
 require (
 	go.etcd.io/etcd/client/v3 v3.5.1
-	golang.org/x/sys v0.0.0-20220317061510-51cd9980dadf
+	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad
+	golang.org/x/sys v0.1.0
 	google.golang.org/protobuf v1.27.1
 )
 

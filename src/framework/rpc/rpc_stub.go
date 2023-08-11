@@ -84,22 +84,17 @@ func (stub *RpcStub) trySendRpc() {
 			var msg any = nil
 			if rpc.RpcMode == RpcModeInner {
 				msg = &InnerMessage{
-					Head: InnerMessageHead{
-						CallId: rpc.CallId,
-						MsgID:  rpc.MsgId,
-						Guid:   0,
-					},
-					PbMsg: rpc.ReqMsg,
+					CallId:  rpc.CallId,
+					MsgID:   rpc.MsgId,
+					Guid:    0,
+					Content: rpc.ReqMsg,
 				}
 			} else if rpc.RpcMode == RpcModeOuter {
 				msg = &OuterMessage{
-					Head: OuterMessageHead{
-						CallId: rpc.CallId,
-						MsgID:  rpc.MsgId,
-					},
-					PbMsg: rpc.ReqMsg,
+					CallId:  rpc.CallId,
+					MsgID:   rpc.MsgId,
+					Content: rpc.ReqMsg,
 				}
-
 			}
 			err := stub.netcore.TcpSendMsg(netconn.(network.Connection).GetSessionId(), msg)
 			if err != nil {

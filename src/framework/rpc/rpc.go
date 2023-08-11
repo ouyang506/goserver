@@ -36,7 +36,7 @@ const (
 )
 
 var (
-	DefaultRpcTimeout = time.Second * 3
+	DefaultRpcTimeout = time.Second * 5
 	nextRpcCallId     = int64(1000000)
 
 	rpcMgrMap sync.Map = sync.Map{} //RpcModeType->*RpcManager
@@ -59,6 +59,7 @@ type RpcEntry struct {
 }
 
 // 初始化rpc管理器
+// msgHandler为struct指针
 func InitRpc(mode RpcModeType, msgHandler any, options ...Option) {
 	rpcMgr := NewRpcManager(mode, msgHandler, options...)
 	AddRpcManager(mode, rpcMgr)
@@ -145,6 +146,13 @@ func OuterCall(req proto.Message, resp proto.Message, options ...Option) (err er
 // rpc同步调用
 func doCall(rpcMode RpcModeType, targetSvrType int,
 	req proto.Message, resp proto.Message, options ...Option) (err error) {
+	if req == nil {
+		return errors.New("request param nil error")
+	}
+
+	if resp == nil {
+		return errors.New("response param nil error")
+	}
 
 	rpc := createRpc(rpcMode, targetSvrType, req, resp, options...)
 	ret := false

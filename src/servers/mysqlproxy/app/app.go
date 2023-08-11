@@ -66,9 +66,10 @@ func (app *App) Start() {
 
 // main loop
 func (app *App) update() {
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
+	log.Debug("begin execute sql")
 	result, err := common.QuerySQL("select * from account where username = ?", "admin")
-	log.Debug("result: %+v, err: %v", result, err)
+	log.Debug("end execute sql, result: %+v, err: %v", result, err)
 	// if err != nil {
 	// 	for _, row := range result.Rows {
 	// 		for _, field := range row {

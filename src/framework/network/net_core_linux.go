@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"framwork/log"
-	"golang.org/x/sys/unix"
 	"net"
 	"runtime"
 	"sync"
@@ -12,6 +11,8 @@ import (
 	"time"
 	"unsafe"
 	"utility/ringbuffer"
+
+	"golang.org/x/sys/unix"
 )
 
 type NetConn struct {
@@ -273,7 +274,7 @@ func (netcore *NetPollCore) TcpClose(sessionId int64) error {
 	return nil
 }
 
-////////// net poll ///////
+// ****************** net poll ******************
 var (
 	wakeInt64 = int64(1)
 	wakeBytes = (*(*[8]byte)(unsafe.Pointer(&wakeInt64)))[:]
@@ -470,6 +471,7 @@ func (poll *Poll) TcpSendMsg(sessionId int64, msg interface{}) error {
 	in = msg
 	for _, codec := range poll.netcore.codecs {
 		out, bChain, err := codec.Encode(c, in)
+		in = out
 		if err != nil {
 			log.Error("TcpSendMsg encode buff error:%s, sessionId:%d", err, c.sessionId)
 			poll.close(c.fd)
@@ -478,7 +480,6 @@ func (poll *Poll) TcpSendMsg(sessionId int64, msg interface{}) error {
 		if !bChain {
 			break
 		}
-		in = out
 	}
 
 	return poll.loopWrite(c.fd) //TODO:会多一次event_mod
@@ -699,6 +700,7 @@ func (poll *Poll) loopRead(fd int) error {
 				for i := codecSize - 1; i >= 0; i-- {
 					codec := poll.netcore.codecs[i]
 					out, bChain, err := codec.Decode(c, in)
+					in = out
 					if err != nil {
 						log.Error("loop read decode msg error:%s, fd:%d", err, c.fd)
 						poll.close(fd)
@@ -707,7 +709,6 @@ func (poll *Poll) loopRead(fd int) error {
 					if !bChain {
 						break
 					}
-					in = out
 				}
 
 				msg := in

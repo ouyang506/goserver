@@ -3,134 +3,125 @@ package rpc
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"framework/log"
 	"framework/network"
 	"framework/proto/pb"
 
 	"google.golang.org/protobuf/proto"
 )
 
-// 服务器内部协议头
-type InnerMessageHead struct {
-	CallId int64 // keep reponse callid equals to request callid
-	MsgID  int   // 大于0表示rpc请求消息，等于0表示rpc返回的消息
-	Guid   int64 // 玩家id等
-}
-
 // 服务器内部协议
 type InnerMessage struct {
-	Head    InnerMessageHead
-	PbMsg   proto.Message
-	Content []byte
+	CallId  int64 // keep reponse call id equals to request call id
+	MsgID   int   // 大于0表示rpc请求消息，等于0表示rpc返回的消息
+	Guid    int64 // 玩家id等
+	Content proto.Message
 }
 
-// 服务器内部解析器
-// |CallId-8bytes|MsgID-4bytes|pbcontent-nbytes|
+// 服务器内部协议解析器
 type InnerMessageCodec struct {
 	rpcMgr *RpcManager
 }
 
 func NewInnerMessageCodec(rpcMgr *RpcManager) *InnerMessageCodec {
-	return &InnerMessageCodec{
-		rpcMgr: rpcMgr,
-	}
+	return &InnerMessageCodec{rpcMgr: rpcMgr}
 }
+
 func (cc *InnerMessageCodec) Encode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	innerMsg := in.(*InnerMessage)
 
 	out := make([]byte, 12)
 	skip := 0
-	binary.LittleEndian.PutUint64(out[skip:], uint64(innerMsg.Head.CallId))
+	binary.LittleEndian.PutUint64(out[skip:], uint64(innerMsg.CallId))
 	skip += 8
-	binary.LittleEndian.PutUint32(out[skip:], uint32(innerMsg.Head.MsgID))
+	binary.LittleEndian.PutUint32(out[skip:], uint32(innerMsg.MsgID))
 	skip += 4
 
-	content, err := proto.Marshal(innerMsg.PbMsg)
-	if err != nil {
-		return nil, false, err
+	if innerMsg.Content != nil {
+		contentBytes, _ := proto.Marshal(innerMsg.Content)
+		out = append(out, contentBytes...)
 	}
-	out = append(out, content...)
-
 	return out, true, nil
 }
 
 func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	innerMsgBytes := in.([]byte)
 	if len(innerMsgBytes) < 12 {
-		return nil, false, errors.New("unmarshal inner message msg id error")
+		return nil, false, errors.New("inner message length error")
 	}
 
 	skip := 0
 	msg := &InnerMessage{}
-	msg.Head.CallId = int64(binary.LittleEndian.Uint64(innerMsgBytes))
+	msg.CallId = int64(binary.LittleEndian.Uint64(innerMsgBytes))
 	skip += 8
-	msg.Head.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
+	msg.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
 	skip += 4
-	msg.Content = innerMsgBytes[skip:]
-	if msg.Head.MsgID == 0 {
-		//rpc response
-		rpcEntry := cc.rpcMgr.GetRpc(msg.Head.CallId)
-		//respMsg := proto.Clone(rpcEntry.RespMsg)
-		err := proto.Unmarshal(msg.Content, rpcEntry.RespMsg)
-		if err != nil {
-			//log error
-		} else {
-			msg.PbMsg = rpcEntry.RespMsg
+
+	content := innerMsgBytes[skip:]
+	switch {
+	case msg.MsgID == 0: //rpc response
+		rpcEntry := cc.rpcMgr.GetRpc(msg.CallId)
+		if rpcEntry == nil {
+			// rpc has been timeout
+			return nil, false, nil
 		}
-	} else if msg.Head.MsgID > 0 {
-		reqMsg, _ := pb.GetProtoMsgById(msg.Head.MsgID)
+		err := proto.Unmarshal(content, rpcEntry.RespMsg)
+		if err != nil {
+			// ignore the invalid response
+			log.Error("unmarshal rpc response error: %v, callId: %v, reqMsgId: %v",
+				err, msg.CallId, rpcEntry.MsgId)
+			return nil, false, nil
+		}
+		msg.Content = rpcEntry.RespMsg
+
+	case msg.MsgID > 0: //rpc request
+		reqMsg, _ := pb.GetProtoMsgById(msg.MsgID)
 		if reqMsg == nil {
-			// log error
+			return nil, false, fmt.Errorf("invalid message id %v", msg.MsgID)
 		}
-		err := proto.Unmarshal(msg.Content, reqMsg)
+
+		err := proto.Unmarshal(content, reqMsg)
 		if err != nil {
-			//log error
-		} else {
-			msg.PbMsg = reqMsg
+			return nil, false, fmt.Errorf("unmarshal message error: %v, msgId: %v", err, msg.MsgID)
 		}
-	} else {
-		// message id error
+		msg.Content = reqMsg
+	default:
+		return nil, false, fmt.Errorf("invalid message id %v", msg.MsgID)
 	}
 
 	return msg, true, nil
 }
 
-// 客户端协议头
-type OuterMessageHead struct {
-	CallId int64 // keep reponse callid equals to request callid
-	MsgID  int   // 大于0表示rpc请求消息，等于0表示rpc返回的消息
-}
-
 // 客户端协议
 type OuterMessage struct {
-	Head    OuterMessageHead
-	PbMsg   proto.Message
-	Content []byte
+	CallId  int64 // keep reponse call id equals to request call id
+	MsgID   int   // 大于0表示rpc请求消息，等于0表示rpc返回的消息
+	Content proto.Message
 }
 
 // 客户端协议解析器
-// |CallId-8bytes|MsgID-4bytes|pbcontent-nbytes|
 type OuterMessageCodec struct {
 	rpcMgr *RpcManager
 }
 
 func NewOuterMessageCodec(rpcMgr *RpcManager) *OuterMessageCodec {
-	return &OuterMessageCodec{
-		rpcMgr: rpcMgr,
-	}
+	return &OuterMessageCodec{rpcMgr: rpcMgr}
 }
 func (cc *OuterMessageCodec) Encode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	outerMsg := in.(*OuterMessage)
 
 	out := make([]byte, 12)
 	skip := 0
-	binary.LittleEndian.PutUint64(out[skip:], uint64(outerMsg.Head.CallId))
+	binary.LittleEndian.PutUint64(out[skip:], uint64(outerMsg.CallId))
 	skip += 8
-	binary.LittleEndian.PutUint32(out[skip:], uint32(outerMsg.Head.MsgID))
+	binary.LittleEndian.PutUint32(out[skip:], uint32(outerMsg.MsgID))
 	skip += 4
 
-	content, _ := proto.Marshal(outerMsg.PbMsg)
-
-	out = append(out, content...)
+	if outerMsg.Content != nil {
+		contentBytes, _ := proto.Marshal(outerMsg.Content)
+		out = append(out, contentBytes...)
+	}
 
 	return out, true, nil
 }
@@ -138,39 +129,46 @@ func (cc *OuterMessageCodec) Encode(c network.Connection, in interface{}) (inter
 func (cc *OuterMessageCodec) Decode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	outerMsgBytes := in.([]byte)
 	if len(outerMsgBytes) < 12 {
-		return nil, false, errors.New("unmarshal outer message msg id error")
+		return nil, false, errors.New("outer message length error")
 	}
 
 	skip := 0
 	msg := &OuterMessage{}
-	msg.Head.CallId = int64(binary.LittleEndian.Uint64(outerMsgBytes))
+	msg.CallId = int64(binary.LittleEndian.Uint64(outerMsgBytes))
 	skip += 8
-	msg.Head.MsgID = int(binary.LittleEndian.Uint32(outerMsgBytes[skip:]))
+	msg.MsgID = int(binary.LittleEndian.Uint32(outerMsgBytes[skip:]))
 	skip += 4
-	msg.Content = outerMsgBytes[skip:]
-	if msg.Head.MsgID == 0 {
-		//rpc response
-		rpcEntry := cc.rpcMgr.GetRpc(msg.Head.CallId)
-		//respMsg := proto.Clone(rpcEntry.RespMsg)
-		err := proto.Unmarshal(msg.Content, rpcEntry.RespMsg)
-		if err != nil {
-			//log error
-		} else {
-			msg.PbMsg = rpcEntry.RespMsg
+
+	content := outerMsgBytes[skip:]
+	switch {
+	case msg.MsgID == 0: //rpc response
+		rpcEntry := cc.rpcMgr.GetRpc(msg.CallId)
+		if rpcEntry != nil {
+			// rpc has been timeout
+			return nil, false, nil
 		}
-	} else if msg.Head.MsgID > 0 {
-		reqMsg, _ := pb.GetProtoMsgById(msg.Head.MsgID)
+		err := proto.Unmarshal(content, rpcEntry.RespMsg)
+		if err != nil {
+			// ignore the invalid response
+			log.Error("unmarshal rpc response error: %v, callId: %v, reqMsgId: %v",
+				err, msg.CallId, rpcEntry.MsgId)
+			return nil, false, nil
+		}
+		msg.Content = rpcEntry.RespMsg
+
+	case msg.MsgID > 0: //rpc request
+		reqMsg, _ := pb.GetProtoMsgById(msg.MsgID)
 		if reqMsg == nil {
-			// log error
+			return nil, false, fmt.Errorf("invalid message id %v", msg.MsgID)
 		}
-		err := proto.Unmarshal(msg.Content, reqMsg)
+
+		err := proto.Unmarshal(content, reqMsg)
 		if err != nil {
-			//log error
-		} else {
-			msg.PbMsg = reqMsg
+			return nil, false, fmt.Errorf("unmarshal message error: %v, msgId: %v", err, msg.MsgID)
 		}
-	} else {
-		// message id error
+		msg.Content = reqMsg
+	default:
+		return nil, false, fmt.Errorf("invalid message id %v", msg.MsgID)
 	}
 
 	return msg, true, nil

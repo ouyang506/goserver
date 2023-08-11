@@ -244,6 +244,7 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 				for i := codecSize - 1; i >= 0; i-- {
 					codec := netcore.codecs[i]
 					out, bChain, err := codec.Decode(conn, in)
+					in = out
 					if err != nil {
 						bClose = true
 						log.Error("loop read decode msg error:%s, sessionId:%d", err, conn.sessionId)
@@ -252,7 +253,6 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 					if !bChain {
 						break
 					}
-					in = out
 				}
 
 				if bClose {
@@ -303,6 +303,7 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 				in = msg
 				for _, codec := range netcore.codecs {
 					out, bChain, err := codec.Encode(conn, in)
+					in = out
 					if err != nil {
 						bClose = true
 						log.Error("loop write encode buff error:%s, sessionId:%d", err, conn.sessionId)
@@ -311,7 +312,6 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 					if !bChain {
 						break
 					}
-					in = out
 				}
 			case <-t.C:
 				timeout = true

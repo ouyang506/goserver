@@ -63,6 +63,9 @@ func (cc *VariableFrameLenCodec) Encode(c Connection, in interface{}) (ignore_ou
 
 func (cc *VariableFrameLenCodec) Decode(c Connection, in interface{}) (out interface{}, bChain bool, err error) {
 	ring := c.GetRcvBuff()
+	if ring.IsEmpty() {
+		return
+	}
 
 	head, tail := ring.PeekAll()
 	headLen := len(head)

@@ -47,6 +47,10 @@ func (cl *CommonLogger) loopSink() {
 }
 
 func (cl *CommonLogger) levelLog(lvl LogLevel, fmtStr string, args ...interface{}) {
+	if cl.logLvl > LogLevelDebug {
+		return
+	}
+
 	content := &LogContent{}
 	content.logLvl = lvl
 	content.logTime = time.Now()
@@ -78,37 +82,22 @@ func (cl *CommonLogger) levelLog(lvl LogLevel, fmtStr string, args ...interface{
 }
 
 func (cl *CommonLogger) LogDebug(fmtStr string, args ...interface{}) {
-	if cl.logLvl > LogLevelDebug {
-		return
-	}
 	cl.levelLog(LogLevelDebug, fmtStr, args...)
 }
 
 func (cl *CommonLogger) LogInfo(fmtStr string, args ...interface{}) {
-	if cl.logLvl > LogLevelInfo {
-		return
-	}
 	cl.levelLog(LogLevelInfo, fmtStr, args...)
 }
 
 func (cl *CommonLogger) LogWarn(fmtStr string, args ...interface{}) {
-	if cl.logLvl > LogLevelWarn {
-		return
-	}
 	cl.levelLog(LogLevelWarn, fmtStr, args...)
 }
 
 func (cl *CommonLogger) LogError(fmtStr string, args ...interface{}) {
-	if cl.logLvl > LogLevelError {
-		return
-	}
 	cl.levelLog(LogLevelError, fmtStr, args...)
 }
 
 func (cl *CommonLogger) LogFatal(fmtStr string, args ...interface{}) {
-	if cl.logLvl > LogLevelFatal {
-		return
-	}
 	cl.levelLog(LogLevelFatal, fmtStr, args...)
 }
 

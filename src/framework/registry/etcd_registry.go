@@ -10,6 +10,7 @@ import (
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -22,6 +23,9 @@ type EtcdRegistry struct {
 
 	etcdClient   *clientv3.Client
 	etcdClientMu sync.Mutex
+
+	services   []ServiceKey
+	servicesMu sync.Mutex
 }
 
 type EtcdConfig struct {
@@ -34,7 +38,7 @@ func NewEtcdRegistry(conf EtcdConfig) *EtcdRegistry {
 	etcdRegistry := &EtcdRegistry{
 		etcdCfg: &clientv3.Config{
 			Endpoints:   conf.Endpoints,
-			DialTimeout: 2 * time.Second,
+			DialTimeout: 5 * time.Second,
 			Username:    conf.Username,
 			Password:    conf.Password,
 		},
@@ -69,8 +73,13 @@ func (reg *EtcdRegistry) FetchAndWatchService(cb WatchCallback) {
 				time.Sleep(1 * time.Second)
 				continue
 			}
-			for _, skey := range services {
+
+			retAdd, retDelete := reg.replaceAllServices(services)
+			for _, skey := range retAdd {
 				cb(WatchEventTypeAdd, skey)
+			}
+			for _, skey := range retDelete {
+				cb(WatchEventTypeDelete, skey)
 			}
 			break
 		}
@@ -110,6 +119,56 @@ func (reg *EtcdRegistry) lazyInit() error {
 		reg.etcdClient = cli
 	}
 	return nil
+}
+
+func (reg *EtcdRegistry) addService(skey ServiceKey) bool {
+	reg.servicesMu.Lock()
+	defer reg.servicesMu.Unlock()
+
+	index, ok := slices.BinarySearchFunc(reg.services, skey, ServiceKeyCmp)
+	if ok {
+		return false
+	}
+
+	slices.Insert[[]ServiceKey, ServiceKey](reg.services, index, skey)
+	return true
+}
+
+func (reg *EtcdRegistry) delService(skey ServiceKey) bool {
+	reg.servicesMu.Lock()
+	defer reg.servicesMu.Unlock()
+
+	index := slices.Index(reg.services, skey)
+	if index < 0 {
+		return false
+	}
+	reg.services = slices.Delete(reg.services, index, index+1)
+	return true
+}
+
+func (reg *EtcdRegistry) replaceAllServices(newServices []ServiceKey) (retAdd []ServiceKey, retDelete []ServiceKey) {
+	reg.servicesMu.Lock()
+	defer reg.servicesMu.Unlock()
+
+	retAdd = []ServiceKey{}
+	retDelete = []ServiceKey{}
+
+	for _, skey := range newServices {
+		_, ok := slices.BinarySearchFunc(reg.services, skey, ServiceKeyCmp)
+		if ok {
+			continue
+		}
+		retAdd = append(retAdd, skey)
+	}
+
+	for _, skey := range reg.services {
+		if !slices.Contains(newServices, skey) {
+			retDelete = append(retDelete, skey)
+		}
+	}
+
+	reg.services = newServices
+	return
 }
 
 func (reg *EtcdRegistry) doRegService(skey ServiceKey, ttl uint32) error {
@@ -229,6 +288,16 @@ func (reg *EtcdRegistry) doWatch(revision *int64, cb WatchCallback) error {
 			if err != nil {
 				log.Error("parse service key error: %v, event key : %v", err, string(event.Kv.Key))
 				continue
+			}
+
+			if eventType == WatchEventTypeAdd {
+				if !reg.addService(skey) {
+					continue
+				}
+			} else if eventType == WatchEventTypeDelete {
+				if !reg.delService(skey) {
+					continue
+				}
 			}
 			cb(eventType, skey)
 		}

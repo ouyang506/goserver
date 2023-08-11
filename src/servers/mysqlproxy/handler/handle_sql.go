@@ -8,8 +8,12 @@ import (
 )
 
 func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.RespExecuteSql) {
-	log.Debug("rcv ReqExecuteSql : %s", req.String())
-	defer log.Debug("response RespExecuteSql : %s", resp.String())
+	reqJson, _ := json.Marshal(req)
+	log.Debug("rcv ReqExecuteSql : %s", string(reqJson))
+	defer func() {
+		respJson, _ := json.Marshal(resp)
+		log.Debug("response RespExecuteSql : %s", string(respJson))
+	}()
 
 	mysqlMgr := dbmgr.GetMysqlMgr()
 

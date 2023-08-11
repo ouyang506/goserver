@@ -11,6 +11,34 @@ type ServiceKey struct {
 	Port       int
 }
 
+func ServiceKeyCmp(a ServiceKey, b ServiceKey) int {
+	if a == b {
+		return 0
+	}
+
+	switch {
+	case a.ServerType < b.ServerType:
+		return -1
+	case a.ServerType > b.ServerType:
+		return 1
+	}
+
+	switch {
+	case a.IP < b.IP:
+		return -1
+	case a.IP > b.IP:
+		return 1
+	}
+
+	switch {
+	case a.Port < b.Port:
+		return -1
+	case a.Port > b.Port:
+		return 1
+	}
+	return 0
+}
+
 type WatchEventType int
 
 const (
