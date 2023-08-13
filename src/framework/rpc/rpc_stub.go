@@ -5,6 +5,7 @@ import (
 	"framework/log"
 	"framework/network"
 	"sort"
+	"sync"
 	"sync/atomic"
 )
 
@@ -13,18 +14,6 @@ const (
 
 	RpcQueueMax = 5000
 )
-
-// rpc网络代理
-type RpcStub struct {
-	ServerType int
-	RemoteIP   string
-	RemotePort int
-
-	pendingRpcQueue []*RpcEntry
-
-	netcore network.NetworkCore
-	netconn atomic.Value //network.Connection
-}
 
 type StubSortByIpPort []*RpcStub
 
@@ -35,12 +24,35 @@ func (s StubSortByIpPort) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 func (s StubSortByIpPort) Less(i, j int) bool {
-	return s[i].key() < s[j].key()
+	return s[i].routeKey() < s[j].routeKey()
 }
 
-func (stub *RpcStub) key() string {
-	return fmt.Sprintf("%s:%d", stub.RemoteIP, stub.RemotePort)
+// rpc网络代理
+type RpcStub struct {
+	netcore network.NetworkCore
+
+	ServerType int
+	RemoteIP   string
+	RemotePort int
+
+	pendingRpcQueue []*RpcEntry
+
+	netconn atomic.Value //network.Connection
 }
+
+func newRpcStub(netcore network.NetworkCore,
+	serverType int, remoteIp string, remotePort int) *RpcStub {
+	stub := &RpcStub{
+		netcore:         netcore,
+		ServerType:      serverType,
+		RemoteIP:        remoteIp,
+		RemotePort:      remotePort,
+		pendingRpcQueue: make([]*RpcEntry, 16),
+	}
+	stub.init()
+	return stub
+}
+
 func (stub *RpcStub) init() {
 	//初始化netconn进行网络连接
 	atrrib := map[interface{}]interface{}{}
@@ -50,6 +62,10 @@ func (stub *RpcStub) init() {
 		log.Error("stub try to connect error : %v, stub: %+v", err, stub)
 	}
 	stub.netconn.Store(netconn)
+}
+
+func (stub *RpcStub) routeKey() string {
+	return fmt.Sprintf("%s:%d", stub.RemoteIP, stub.RemotePort)
 }
 
 func (stub *RpcStub) pushRpc(rpc *RpcEntry) bool {
@@ -116,77 +132,64 @@ func (stub *RpcStub) close() {
 	}
 }
 
+// 网络代理管道管理器
 type RpcStubManger struct {
-	rpcMgr      *RpcManager
-	netcore     network.NetworkCore
-	typeStubMap map[int]*RpcServerTypeStubs
+	netcore network.NetworkCore
+
+	stubs   map[int]*ServerTypeStubs
+	stubsMu sync.RWMutex
 }
 
-type RpcServerTypeStubs struct {
+type ServerTypeStubs struct {
 	serverType int
 	stubs      []*RpcStub
 	router     RpcRouter
 }
 
-func newRpcStubManager(rpcMgr *RpcManager, codecs []network.Codec, eventHandlers []network.NetEventHandler) *RpcStubManger {
+func newRpcStubManager(netcore network.NetworkCore) *RpcStubManger {
 	mgr := &RpcStubManger{
-		rpcMgr: rpcMgr,
+		netcore: netcore,
+		stubs:   map[int]*ServerTypeStubs{},
 	}
-
-	// 初始化网络
-	mgr.netcore = network.NewNetworkCore(
-		network.WithEventHandlers(eventHandlers),
-		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
-		network.WithSocketSendBufferSize(32*1024),
-		network.WithSocketRcvBufferSize(32*1024),
-		network.WithSocketTcpNoDelay(true),
-		network.WithFrameCodecs(codecs))
-	mgr.netcore.Start()
-
-	mgr.typeStubMap = map[int]*RpcServerTypeStubs{}
-
 	return mgr
 }
 
 // 添加一个代理管道
 func (mgr *RpcStubManger) addStub(serverType int, remoteIp string, remotePort int) bool {
-	typeStubs, ok := mgr.typeStubMap[serverType]
+	mgr.stubsMu.Lock()
+	defer mgr.stubsMu.Unlock()
+
+	typeStubs, ok := mgr.stubs[serverType]
 	if !ok {
-		typeStubs = &RpcServerTypeStubs{
+		typeStubs = &ServerTypeStubs{
 			serverType: serverType,
 			router:     newConsistRouter(),
 		}
-		mgr.typeStubMap[serverType] = typeStubs
+		mgr.stubs[serverType] = typeStubs
 	}
-
-	stub := &RpcStub{
-		ServerType: serverType,
-		RemoteIP:   remoteIp,
-		RemotePort: remotePort,
-		netcore:    mgr.netcore,
-	}
-	stub.init()
+	stub := newRpcStub(mgr.netcore, serverType, remoteIp, remotePort)
 
 	typeStubs.stubs = append(typeStubs.stubs, stub)
 	sort.Sort(StubSortByIpPort(typeStubs.stubs))
 
-	typeStubs.router.UpdateRoute(stub.key(), stub)
-
-	log.Debug("add rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
+	typeStubs.router.UpdateRoute(stub.routeKey(), stub)
+	log.Info("add rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 	return true
 }
 
 // 删除一个代理管道
 func (mgr *RpcStubManger) delStub(serverType int, remoteIp string, remotePort int) bool {
-	typeStubs, ok := mgr.typeStubMap[serverType]
+	mgr.stubsMu.Lock()
+	defer mgr.stubsMu.Unlock()
+
+	typeStubs, ok := mgr.stubs[serverType]
 	if ok {
 		for i, stub := range typeStubs.stubs {
 			if stub.RemoteIP == remoteIp && stub.RemotePort == remotePort {
 				typeStubs.stubs = append(typeStubs.stubs[:i], typeStubs.stubs[i+1:]...)
-				typeStubs.router.DelRoute(stub.key())
+				typeStubs.router.DelRoute(stub.routeKey())
 				stub.close()
-
-				log.Debug("delete rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
+				log.Info("delete rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 				return true
 			}
 		}
@@ -195,8 +198,11 @@ func (mgr *RpcStubManger) delStub(serverType int, remoteIp string, remotePort in
 }
 
 // 删除一个类型的代理管道
-func (mgr *RpcStubManger) delTypeStubs(serverType int) bool {
-	typeStubs, ok := mgr.typeStubMap[serverType]
+func (mgr *RpcStubManger) delStubsByType(serverType int) bool {
+	mgr.stubsMu.Lock()
+	defer mgr.stubsMu.Unlock()
+
+	typeStubs, ok := mgr.stubs[serverType]
 	if !ok {
 		return false
 	}
@@ -204,19 +210,21 @@ func (mgr *RpcStubManger) delTypeStubs(serverType int) bool {
 		return false
 	}
 	for _, stub := range typeStubs.stubs {
-		typeStubs.router.DelRoute(stub.key())
+		typeStubs.router.DelRoute(stub.routeKey())
 		stub.close()
-
 		log.Debug("delete rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 	}
 
-	delete(mgr.typeStubMap, serverType)
+	delete(mgr.stubs, serverType)
 	return true
 }
 
 // 查询代理管道
 func (mgr *RpcStubManger) findStub(serverType int, remoteIP string, remotePort int) *RpcStub {
-	typeStubs, ok := mgr.typeStubMap[serverType]
+	mgr.stubsMu.RLock()
+	defer mgr.stubsMu.RUnlock()
+
+	typeStubs, ok := mgr.stubs[serverType]
 	if ok {
 		for _, stub := range typeStubs.stubs {
 			if stub.RemoteIP == remoteIP && stub.RemotePort == remotePort {
@@ -229,12 +237,15 @@ func (mgr *RpcStubManger) findStub(serverType int, remoteIP string, remotePort i
 
 // 为rpc分配一个stub
 func (mgr *RpcStubManger) selectStub(rpc *RpcEntry) *RpcStub {
-	typeStubs, ok := mgr.typeStubMap[rpc.TargetSvrType]
+	mgr.stubsMu.RLock()
+	defer mgr.stubsMu.RUnlock()
+
+	typeStubs, ok := mgr.stubs[rpc.TargetSvrType]
 	if !ok {
 		return nil
 	}
 
-	stub := typeStubs.router.SelectServer(rpc.RouteKey)
+	stub := typeStubs.router.SelectRoute(rpc.RouteKey)
 	if stub == nil {
 		return nil
 	}

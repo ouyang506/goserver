@@ -16,6 +16,8 @@ import (
 
 // RPC管理器(thread safe)
 type RpcManager struct {
+	netcore network.NetworkCore
+
 	mutex      sync.Mutex
 	rpcStubMgr *RpcStubManger
 
@@ -52,10 +54,7 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 			outerEventHandler.SetOwner(mgr)
 			handlers = append(handlers, outerEventHandler)
 		}
-
 	case RpcModeInner:
-		fallthrough
-	default:
 		codecs = append(codecs, NewInnerMessageCodec(mgr))
 		codecs = append(codecs, network.NewVariableFrameLenCodec())
 
@@ -69,41 +68,29 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 		}
 	}
 
-	mgr.rpcStubMgr = newRpcStubManager(mgr, codecs, handlers)
+	// 初始化网络
+	mgr.netcore = network.NewNetworkCore(
+		network.WithEventHandlers(handlers),
+		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
+		network.WithSocketSendBufferSize(32*1024),
+		network.WithSocketRcvBufferSize(32*1024),
+		network.WithSocketTcpNoDelay(true),
+		network.WithFrameCodecs(codecs))
+	mgr.netcore.Start()
+
+	mgr.rpcStubMgr = newRpcStubManager(mgr.netcore)
+
 	mgr.pendingRpcMap = map[int64]*PendingRpcEntry{}
 	mgr.timerMgr = timer.NewTimerWheel(&timer.Option{TimeAccuracy: time.Millisecond * 200})
 	mgr.timerMgr.Start()
 
-	mgr.SetMsgHandler(msgHandler)
+	mgr.initMsgHandler(msgHandler)
 	return mgr
 }
 
-// 注册服务
-func (mgr *RpcManager) RegisterService(regMgr registry.Registry, skey registry.ServiceKey) {
-	regMgr.RegService(skey)
-}
-
-// 监视注册中心服务
-func (mgr *RpcManager) FetchWatchService(regMgr registry.Registry) {
-	regMgr.FetchAndWatchService(mgr.registryCallback)
-}
-
-// 注册中心服务变化回调
-func (mgr *RpcManager) registryCallback(oper registry.WatchEventType, skey registry.ServiceKey) {
-	serverType, ip, port := skey.ServerType, skey.IP, skey.Port
-	if serverType == 0 || ip == "" || port == 0 {
-		log.Error("handler registry callback error, operate type: %v, key : %v", oper, skey)
-		return
-	}
-	if oper == registry.WatchEventTypeAdd {
-		mgr.AddStub(serverType, ip, port)
-	} else if oper == registry.WatchEventTypeDelete {
-		mgr.DelStub(serverType, ip, port)
-	}
-}
-
 // 设置消息委托处理器
-func (mgr *RpcManager) SetMsgHandler(handler any) {
+// @param handler 结构体指针
+func (mgr *RpcManager) initMsgHandler(handler any) {
 	methodMap := make(map[int]reflect.Value)
 	refType := reflect.TypeOf(handler)
 	refValue := reflect.ValueOf(handler)
@@ -115,9 +102,12 @@ func (mgr *RpcManager) SetMsgHandler(handler any) {
 		}
 		reqMsgName := methodName[len(RpcHandlerMethodPrefix):]
 		reqMsgId := pb.GetMsgIdByName(reqMsgName)
+		if reqMsgId == 0 {
+			log.Warn("cannot find the message id by handle method, methodName = %v", methodName)
+			continue
+		}
 		methodMap[reqMsgId] = refValue.Method(i)
 	}
-
 	mgr.msgHandleMap = methodMap
 }
 
@@ -130,35 +120,55 @@ func (mgr *RpcManager) GetMsgHandlerFunc(msgId int) *reflect.Value {
 	return &method
 }
 
-// 添加一个代理管道(注册中心调用)
-func (mgr *RpcManager) AddStub(serverType int, remoteIp string, remotePort int) bool {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
+// 监听端口
+func (mgr *RpcManager) TcpListen(ip string, port int) error {
+	return mgr.rpcStubMgr.netcore.TcpListen(ip, port)
+}
 
+// 发送网络消息
+func (mgr *RpcManager) TcpSendMsg(connSessionId int64, msg any) error {
+	err := mgr.rpcStubMgr.netcore.TcpSendMsg(connSessionId, msg)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// 监视注册中心服务
+func (mgr *RpcManager) FetchWatchService(regMgr registry.Registry) {
+	cb := func(oper registry.WatchEventType, skey registry.ServiceKey) {
+		serverType, ip, port := skey.ServerType, skey.IP, skey.Port
+		if serverType == 0 || ip == "" || port == 0 {
+			log.Error("handler registry callback error, operate type: %v, key : %v", oper, skey)
+			return
+		}
+		if oper == registry.WatchEventTypeAdd {
+			mgr.AddStub(serverType, ip, port)
+		} else if oper == registry.WatchEventTypeDelete {
+			mgr.DelStub(serverType, ip, port)
+		}
+	}
+
+	regMgr.FetchAndWatchService(cb)
+}
+
+// 添加一个代理管道(注册中心回调调用)
+func (mgr *RpcManager) AddStub(serverType int, remoteIp string, remotePort int) bool {
 	return mgr.rpcStubMgr.addStub(serverType, remoteIp, remotePort)
 }
 
-// 删除一个代理管道(注册中心调用)
+// 删除一个代理管道(注册中心回调调用)
 func (mgr *RpcManager) DelStub(serverType int, remoteIp string, remotePort int) bool {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
-
 	return mgr.rpcStubMgr.delStub(serverType, remoteIp, remotePort)
 }
 
 // 删除目标类型的全部代理管道
-func (mgr *RpcManager) DelTypeStubs(serverType int) bool {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
-
-	return mgr.rpcStubMgr.delTypeStubs(serverType)
+func (mgr *RpcManager) DelStubsByType(serverType int) bool {
+	return mgr.rpcStubMgr.delStubsByType(serverType)
 }
 
 // 查询代理管道
 func (mgr *RpcManager) FindStub(serverType int, remoteIP string, remotePort int) *RpcStub {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
-
 	return mgr.rpcStubMgr.findStub(serverType, remoteIP, remotePort)
 }
 
@@ -167,12 +177,12 @@ func (mgr *RpcManager) AddRpc(rpc *RpcEntry) bool {
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	var rpcStub *RpcStub = nil
 	if rpc.TargetSvrType <= 0 {
 		log.Error("target server type error, TargetSvrType : %v", rpc.TargetSvrType)
 		return false
 	}
-	rpcStub = mgr.rpcStubMgr.selectStub(rpc)
+
+	rpcStub := mgr.rpcStubMgr.selectStub(rpc)
 	if rpcStub == nil {
 		log.Error("cannot find rpc stub, serverType : %v", rpc.TargetSvrType)
 		return false
@@ -259,13 +269,4 @@ func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg proto.Message) {
 	if pendingRpcEntry.rpc.WaitTimer != nil {
 		mgr.timerMgr.RemoveTimer(pendingRpcEntry.rpc.WaitTimer)
 	}
-}
-
-// 通过网络连接的sessionId发送消息
-func (mgr *RpcManager) TcpSendMsg(connSessionId int64, msg any) error {
-	err := mgr.rpcStubMgr.netcore.TcpSendMsg(connSessionId, msg)
-	if err != nil {
-		return err
-	}
-	return nil
 }

@@ -30,9 +30,8 @@ type RpcModeType int
 
 const (
 	DefaultRpcMode RpcModeType = RpcModeInner //默认为服务器内部rpc
-
-	RpcModeInner RpcModeType = 1 //服务器内部rpc
-	RpcModeOuter RpcModeType = 2 //客户端rpc
+	RpcModeInner   RpcModeType = 1            //服务器内部rpc
+	RpcModeOuter   RpcModeType = 2            //客户端rpc
 )
 
 var (
@@ -62,7 +61,7 @@ type RpcEntry struct {
 // msgHandler为struct指针
 func InitRpc(mode RpcModeType, msgHandler any, options ...Option) {
 	rpcMgr := NewRpcManager(mode, msgHandler, options...)
-	AddRpcManager(mode, rpcMgr)
+	rpcMgrMap.Store(mode, rpcMgr)
 }
 
 // 根据类型获取rpc管理器
@@ -74,35 +73,13 @@ func GetRpcManager(mode RpcModeType) *RpcManager {
 	return rpcMgr.(*RpcManager)
 }
 
-func AddRpcManager(mode RpcModeType, rpcMgr *RpcManager) {
-	rpcMgrMap.Store(mode, rpcMgr)
-}
-
 // 监听端口
 func TcpListen(mode RpcModeType, ip string, port int) error {
 	rpcMgr := GetRpcManager(mode)
 	if rpcMgr == nil {
 		return ErrorRpcMgrNotFound
 	}
-	return rpcMgr.rpcStubMgr.netcore.TcpListen(ip, port)
-}
-
-// 注册服务
-func RegisterService(mode RpcModeType, reg registry.Registry,
-	serverType int, ip string, port int) error {
-
-	rpcMgr := GetRpcManager(mode)
-	if rpcMgr == nil {
-		return ErrorRpcMgrNotFound
-	}
-
-	skey := registry.ServiceKey{
-		ServerType: serverType,
-		IP:         ip,
-		Port:       port,
-	}
-	rpcMgr.RegisterService(reg, skey)
-	return nil
+	return rpcMgr.TcpListen(ip, port)
 }
 
 // 获取注册中心服务以及监听服务变化事件

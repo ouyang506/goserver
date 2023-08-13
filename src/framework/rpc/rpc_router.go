@@ -13,7 +13,7 @@ const (
 type RpcRouter interface {
 	UpdateRoute(memberKey string, memberValue interface{})
 	DelRoute(memberKey string)
-	SelectServer(key string) interface{}
+	SelectRoute(key string) interface{}
 }
 
 func NewRpcRouter(routeType RpcRouteType) RpcRouter {
@@ -50,7 +50,7 @@ func (r *ConsistRouter) DelRoute(memberKey string) {
 	delete(r.routeInfoMap, memberKey)
 }
 
-func (r *ConsistRouter) SelectServer(key string) interface{} {
+func (r *ConsistRouter) SelectRoute(key string) interface{} {
 	member := r.consistHash.Get(key)
 	if member == "" {
 		return nil

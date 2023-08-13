@@ -24,7 +24,7 @@ func (mgr *NetMgr) RemoveGateStubs() {
 	if rpcmgr == nil {
 		return
 	}
-	rpcmgr.DelTypeStubs(consts.ServerTypeGate)
+	rpcmgr.DelStubsByType(consts.ServerTypeGate)
 }
 
 func (mgr *NetMgr) AddGateStub(remoteIP string, remotePort int) {

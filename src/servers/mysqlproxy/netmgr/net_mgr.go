@@ -40,14 +40,21 @@ func (mgr *NetMgr) Start() {
 	rpc.InitRpc(rpc.RpcModeInner, msgHandler, rpc.WithNetEventHandler(netEventhandler))
 	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 
+	// register self endpoint to center
 	etcdConf := registry.EtcdConfig{
 		Endpoints: conf.RegistryConf.EtcdConf.Endpoints.Items,
 		Username:  conf.RegistryConf.EtcdConf.Username,
 		Password:  conf.RegistryConf.EtcdConf.Password,
 	}
-
 	regCenter := registry.NewEtcdRegistry(etcdConf)
-	rpc.RegisterService(rpc.RpcModeInner, regCenter,
-		consts.ServerTypeMysqlProxy, conf.ListenConf.Ip, conf.ListenConf.Port)
+
+	skey := registry.ServiceKey{
+		ServerType: consts.ServerTypeMysqlProxy,
+		IP:         conf.ListenConf.Ip,
+		Port:       conf.ListenConf.Port,
+	}
+	regCenter.RegService(skey)
+
+	// fetch current all services and then watch
 	rpc.FetchWatchService(rpc.RpcModeInner, regCenter)
 }
