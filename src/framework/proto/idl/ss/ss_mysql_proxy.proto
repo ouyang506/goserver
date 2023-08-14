@@ -4,6 +4,7 @@ package ss;
 //消息ID定义[范围10001-10100]
 enum ss_mysql_proxy{
   msg_id_req_execute_sql  = 10001;
+  msg_id_notify_execute_sql  = 10002;
 }
 
 // mysql操作类型
@@ -37,3 +38,6 @@ message mysql_query_result{
   repeated mysql_result_row  rows      = 2; 
 }
 
+message notify_execute_sql{
+  optional string value = 1;
+}

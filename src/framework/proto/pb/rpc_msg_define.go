@@ -16,4 +16,5 @@ var CSRpcMsg [][]any = [][]any{
 var SSRpcMsg [][]any = [][]any{
 	//ss_mysql_proxy
 	{int(ss.SsMysqlProxy_msg_id_req_execute_sql), &ss.ReqExecuteSql{}, &ss.RespExecuteSql{}},
+	{int(ss.SsMysqlProxy_msg_id_notify_execute_sql), &ss.NotifyExecuteSql{}},
 }

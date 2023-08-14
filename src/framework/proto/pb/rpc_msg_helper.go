@@ -46,16 +46,17 @@ func fillMsgMap() {
 	}
 }
 
+// TODO: need a message pool here
 func GetProtoMsgById(msgId int) (req proto.Message, resp proto.Message) {
 	msgArr, ok := MsgId2Type[msgId]
 	if !ok {
 		return
 	}
 	if len(msgArr) >= 1 {
-		req = msgArr[0]
+		req = proto.Clone(msgArr[0])
 	}
 	if len(msgArr) >= 2 {
-		resp = msgArr[1]
+		resp = proto.Clone(msgArr[1])
 	}
 	return
 }

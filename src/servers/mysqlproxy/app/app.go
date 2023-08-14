@@ -3,7 +3,10 @@ package app
 import (
 	"common"
 	"fmt"
+	"framework/consts"
 	"framework/log"
+	"framework/proto/pb/ss"
+	"framework/rpc"
 	"mysqlproxy/config"
 	"mysqlproxy/dbmgr"
 	"mysqlproxy/netmgr"
@@ -77,4 +80,8 @@ func (app *App) update() {
 	// 		}
 	// 	}
 	// }
+	notify := &ss.NotifyExecuteSql{}
+	notify.Value = new(string)
+	*notify.Value = "test_notify"
+	rpc.Notify(consts.ServerTypeMysqlProxy, notify)
 }

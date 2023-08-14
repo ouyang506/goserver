@@ -5,6 +5,7 @@ import (
 	"framework/network"
 	"framework/proto/pb"
 	"reflect"
+	"runtime"
 )
 
 // rpc网络事件回调
@@ -37,11 +38,6 @@ func (h *RpcNetEventHandlerBase) OnConnect(c network.Connection, err error) {
 		log.Error("NetEvent connect remote endpoint error, error: %v, sessionId: %v, peerHost:%v, peerPort:%v", err, c.GetSessionId(), peerHost, peerPort)
 	} else {
 		log.Info("NetEvent connect remote endpoint success, sessionId: %v, peerHost:%v, peerPort:%v,", c.GetSessionId(), peerHost, peerPort)
-		// stub, ok := c.GetAttrib(AttrRpcStub)
-		// if !ok || stub == nil {
-		// 	return
-		// }
-		// stub.(*RpcStub).onConnected()
 	}
 }
 
@@ -67,13 +63,13 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 	msgId := rcvInnerMsg.MsgID
 	log.Debug("NetEvent OnRcvMsg, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
 	switch {
-	case rcvInnerMsg.MsgID < 0:
+	case msgId < 0:
 		log.Error("receive wrong message id, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
 		return
-	case rcvInnerMsg.MsgID == 0:
+	case msgId == 0:
 		h.GetOwner().OnRcvResponse(rcvInnerMsg.CallId, rcvInnerMsg.Content)
 		return
-	case rcvInnerMsg.MsgID > 0:
+	case msgId > 0:
 		reqMsg := rcvInnerMsg.Content
 		_, respMsg := pb.GetProtoMsgById(msgId)
 		method := h.GetOwner().GetMsgHandlerFunc(msgId)
@@ -82,14 +78,26 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 			return
 		}
 
-		method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
+		defer func() {
+			if r := recover(); r != nil {
+				buff := make([]byte, 4096)
+				n := runtime.Stack(buff, false)
+				log.Error("handler rcv msg panic, msgId: %v, stack : %s", msgId, string(buff[:n]))
+			}
+		}()
 
-		respInnerMsg := &InnerMessage{}
-		respInnerMsg.CallId = rcvInnerMsg.CallId
-		respInnerMsg.MsgID = 0
-		respInnerMsg.Content = respMsg
+		if respMsg == nil {
+			method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
+		} else {
+			method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
 
-		h.GetOwner().TcpSendMsg(c.GetSessionId(), respInnerMsg)
+			respInnerMsg := &InnerMessage{}
+			respInnerMsg.CallId = rcvInnerMsg.CallId
+			respInnerMsg.MsgID = 0
+			respInnerMsg.Content = respMsg
+
+			h.GetOwner().TcpSendMsg(c.GetSessionId(), respInnerMsg)
+		}
 		return
 	default:
 		return
@@ -124,16 +132,20 @@ func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 			log.Error("rpc message handle function not found, sessionId : %d, msgId: %d ", c.GetSessionId(), msgId)
 			return
 		}
+		if respMsg == nil {
+			method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
+		} else {
+			method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
 
-		method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
+			respOuterMsg := &OuterMessage{}
+			respOuterMsg.CallId = rcvOuterMsg.CallId
+			respOuterMsg.MsgID = 0
+			respOuterMsg.Content = respMsg
 
-		respOuterMsg := &OuterMessage{}
-		respOuterMsg.CallId = rcvOuterMsg.CallId
-		respOuterMsg.MsgID = 0
-		respOuterMsg.Content = respMsg
+			h.GetOwner().TcpSendMsg(c.GetSessionId(), respOuterMsg)
+			return
+		}
 
-		h.GetOwner().TcpSendMsg(c.GetSessionId(), respOuterMsg)
-		return
 	default:
 		return
 	}

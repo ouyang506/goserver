@@ -200,5 +200,6 @@ func (mgr *RpcManager) OnRcvResponse(callId int64, respMsg proto.Message) {
 	select {
 	case rpc.RespChan <- respMsg:
 	default:
+		log.Error("push msg to resp channel error")
 	}
 }
