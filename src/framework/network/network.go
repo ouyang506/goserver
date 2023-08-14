@@ -5,7 +5,7 @@ type NetworkCore interface {
 	Start()
 	Stop()
 	TcpListen(host string, port int) error
-	TcpConnect(host string, port int, autoReconnect bool, attrib map[interface{}]interface{}) (Connection, error) //nonblock
+	TcpConnect(host string, port int, autoReconnect bool) (Connection, error) //nonblock
 	TcpSendMsg(sessionId int64, msg interface{}) error
 	TcpClose(sessionId int64) error
 }

@@ -209,18 +209,13 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 }
 
 // implement network core TcpConnect
-func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool, attrib map[interface{}]interface{}) (Connection, error) {
+func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool) (Connection, error) {
 
 	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
 	conn.autoReconnect = autoReconnect
 	conn.peerHost = host
 	conn.peerPort = port
-	if attrib != nil {
-		for k, v := range attrib {
-			conn.SetAttrib(k, v)
-		}
-	}
 	netcore.loadBalance.AllocConnection(conn.sessionId)
 
 	netcore.addWaitConn(conn)

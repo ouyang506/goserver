@@ -8,28 +8,17 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"time"
-	"utility/timer"
 
 	"google.golang.org/protobuf/proto"
 )
 
 // RPC管理器(thread safe)
 type RpcManager struct {
-	netcore network.NetworkCore
-
-	mutex      sync.Mutex
-	rpcStubMgr *RpcStubManger
-
-	pendingRpcMap map[int64]*PendingRpcEntry
-	timerMgr      *timer.TimerWheel
-
+	netcore      network.NetworkCore
+	rpcStubMgr   *RpcStubManger
 	msgHandleMap map[int]reflect.Value
-}
 
-type PendingRpcEntry struct {
-	rpc     *RpcEntry
-	rpcStub *RpcStub
+	rpcMap sync.Map //rpcCallId->*RpcEntry
 }
 
 func NewRpcManager(mode RpcModeType, msgHandler any,
@@ -80,9 +69,7 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 
 	mgr.rpcStubMgr = newRpcStubManager(mgr.netcore)
 
-	mgr.pendingRpcMap = map[int64]*PendingRpcEntry{}
-	mgr.timerMgr = timer.NewTimerWheel(&timer.Option{TimeAccuracy: time.Millisecond * 200})
-	mgr.timerMgr.Start()
+	mgr.rpcMap = sync.Map{}
 
 	mgr.initMsgHandler(msgHandler)
 	return mgr
@@ -174,23 +161,8 @@ func (mgr *RpcManager) FindStub(serverType int, remoteIP string, remotePort int)
 
 // 添加一个rpc到管理器
 func (mgr *RpcManager) AddRpc(rpc *RpcEntry) bool {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
-
-	if rpc.TargetSvrType <= 0 {
-		log.Error("target server type error, TargetSvrType : %v", rpc.TargetSvrType)
-		return false
-	}
-
-	rpcStub := mgr.rpcStubMgr.selectStub(rpc)
-	if rpcStub == nil {
-		log.Error("cannot find rpc stub, serverType : %v", rpc.TargetSvrType)
-		return false
-	}
-
-	ret := rpcStub.pushRpc(rpc)
-	if !ret {
-		log.Error("push rpc error, callId : %v", rpc.CallId)
+	if !mgr.rpcStubMgr.addRpc(rpc) {
+		log.Error("add rpc failed, target server type: %v, callId: %v", rpc.TargetSvrType, rpc.CallId)
 		return false
 	}
 
@@ -199,74 +171,34 @@ func (mgr *RpcManager) AddRpc(rpc *RpcEntry) bool {
 		return true
 	}
 
-	pendingRpcEntry := &PendingRpcEntry{
-		rpc:     rpc,
-		rpcStub: rpcStub,
-	}
-	mgr.pendingRpcMap[rpc.CallId] = pendingRpcEntry
-
-	rpc.WaitTimer = mgr.timerMgr.AddTimer(rpc.Timeout, func() {
-		log.Debug("rpc timeout : CallId : %v", rpc.CallId)
-		mgr.RemoveRpc(rpc.CallId)
-		select {
-		case rpc.RespChan <- ErrorRpcTimeOut:
-		default:
-		}
-	})
+	mgr.rpcMap.Store(rpc.CallId, rpc)
 
 	return true
 }
 
-func (mgr *RpcManager) RemoveRpc(sessionId int64) bool {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
-
-	pendingRpcEntry, ok := mgr.pendingRpcMap[sessionId]
-	if !ok {
-		return false
-	}
-
-	if pendingRpcEntry.rpcStub == nil {
-		return false
-	}
-
-	if !pendingRpcEntry.rpcStub.removeRpc(sessionId) {
-		return false
-	}
-
-	return true
+func (mgr *RpcManager) RemoveRpc(callId int64) bool {
+	_, ok := mgr.rpcMap.LoadAndDelete(callId)
+	return ok
 }
 
 // 通过callId获取rpc信息
 func (mgr *RpcManager) GetRpc(callId int64) *RpcEntry {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
-	pending, ok := mgr.pendingRpcMap[callId]
+	rpc, ok := mgr.rpcMap.Load(callId)
 	if !ok {
 		return nil
 	}
-	return pending.rpc
+	return rpc.(*RpcEntry)
 }
 
 // 收到rpc返回后回调
-func (mgr *RpcManager) OnRcvResponse(sessionId int64, respMsg proto.Message) {
-	mgr.mutex.Lock()
-	defer mgr.mutex.Unlock()
-
-	pendingRpcEntry, ok := mgr.pendingRpcMap[sessionId]
-	if !ok {
+func (mgr *RpcManager) OnRcvResponse(callId int64, respMsg proto.Message) {
+	rpc := mgr.GetRpc(callId)
+	if rpc == nil {
 		return
 	}
 
-	pendingRpcEntry.rpc.RespMsg = respMsg
 	select {
-	case pendingRpcEntry.rpc.RespChan <- nil:
+	case rpc.RespChan <- respMsg:
 	default:
-	}
-
-	pendingRpcEntry.rpcStub.removeRpc(sessionId)
-
-	if pendingRpcEntry.rpc.WaitTimer != nil {
-		mgr.timerMgr.RemoveTimer(pendingRpcEntry.rpc.WaitTimer)
 	}
 }

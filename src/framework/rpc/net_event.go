@@ -34,14 +34,14 @@ func (h *RpcNetEventHandlerBase) OnAccept(c network.Connection) {
 func (h *RpcNetEventHandlerBase) OnConnect(c network.Connection, err error) {
 	peerHost, peerPort := c.GetPeerAddr()
 	if err != nil {
-		log.Info("rpc stub manager OnConnectFailed, sessionId: %v, peerHost:%v, peerPort:%v", c.GetSessionId(), peerHost, peerPort)
+		log.Error("NetEvent connect remote endpoint error, error: %v, sessionId: %v, peerHost:%v, peerPort:%v", err, c.GetSessionId(), peerHost, peerPort)
 	} else {
-		log.Info("rpc stub manager OnConnected, sessionId: %v, peerHost:%v, peerPort:%v,", c.GetSessionId(), peerHost, peerPort)
-		stub, ok := c.GetAttrib(AttrRpcStub)
-		if !ok || stub == nil {
-			return
-		}
-		stub.(*RpcStub).onConnected()
+		log.Info("NetEvent connect remote endpoint success, sessionId: %v, peerHost:%v, peerPort:%v,", c.GetSessionId(), peerHost, peerPort)
+		// stub, ok := c.GetAttrib(AttrRpcStub)
+		// if !ok || stub == nil {
+		// 	return
+		// }
+		// stub.(*RpcStub).onConnected()
 	}
 }
 

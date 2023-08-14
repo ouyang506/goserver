@@ -6,13 +6,11 @@ import (
 	"framework/network"
 	"sort"
 	"sync"
-	"sync/atomic"
+	"time"
 )
 
 const (
-	AttrRpcStub = "AttrRpcStub"
-
-	RpcQueueMax = 5000
+	RpcQueueMax = 4096
 )
 
 type StubSortByIpPort []*RpcStub
@@ -35,100 +33,118 @@ type RpcStub struct {
 	RemoteIP   string
 	RemotePort int
 
-	pendingRpcQueue []*RpcEntry
+	rpcChan chan (*RpcEntry)
 
-	netconn atomic.Value //network.Connection
+	netconn network.Connection
+	connMu  sync.RWMutex
 }
 
 func newRpcStub(netcore network.NetworkCore,
 	serverType int, remoteIp string, remotePort int) *RpcStub {
 	stub := &RpcStub{
-		netcore:         netcore,
-		ServerType:      serverType,
-		RemoteIP:        remoteIp,
-		RemotePort:      remotePort,
-		pendingRpcQueue: make([]*RpcEntry, 16),
+		netcore:    netcore,
+		ServerType: serverType,
+		RemoteIP:   remoteIp,
+		RemotePort: remotePort,
+		rpcChan:    make(chan (*RpcEntry), RpcQueueMax),
 	}
-	stub.init()
 	return stub
-}
-
-func (stub *RpcStub) init() {
-	//初始化netconn进行网络连接
-	atrrib := map[interface{}]interface{}{}
-	atrrib[AttrRpcStub] = stub
-	netconn, err := stub.netcore.TcpConnect(stub.RemoteIP, stub.RemotePort, true, atrrib)
-	if err != nil {
-		log.Error("stub try to connect error : %v, stub: %+v", err, stub)
-	}
-	stub.netconn.Store(netconn)
 }
 
 func (stub *RpcStub) routeKey() string {
 	return fmt.Sprintf("%s:%d", stub.RemoteIP, stub.RemotePort)
 }
 
+// connect rpc remote server
+func (stub *RpcStub) lazyInitConn() {
+	stub.connMu.Lock()
+	defer stub.connMu.Unlock()
+
+	if stub.netconn != nil {
+		return
+	}
+
+	//初始化netconn进行网络连接
+	netconn, err := stub.netcore.TcpConnect(stub.RemoteIP, stub.RemotePort, true)
+	if err != nil {
+		log.Error("stub try to connect error : %v, stub: %+v", err, stub)
+	}
+	stub.netconn = netconn
+
+	go stub.loopSend()
+}
+
+func (stub *RpcStub) loopSend() {
+	var current *RpcEntry = nil
+	for {
+		// netconn是否处于连接状态
+		if stub.netconn.GetState() != network.ConnStateConnected {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		var rpc *RpcEntry = nil
+		if current != nil {
+			rpc = current
+		} else {
+			rpc = stub.waitPopRpc()
+		}
+
+		var msg any = nil
+		if rpc.RpcMode == RpcModeInner {
+			msg = &InnerMessage{
+				CallId:  rpc.CallId,
+				MsgID:   rpc.MsgId,
+				Guid:    0,
+				Content: rpc.ReqMsg,
+			}
+		} else if rpc.RpcMode == RpcModeOuter {
+			msg = &OuterMessage{
+				CallId:  rpc.CallId,
+				MsgID:   rpc.MsgId,
+				Content: rpc.ReqMsg,
+			}
+		}
+
+		err := stub.netcore.TcpSendMsg(stub.netconn.GetSessionId(), msg)
+		if err != nil {
+			log.Error("rpc stub loop send msg error: %v", err)
+			continue
+		}
+		current = nil
+	}
+}
+
 func (stub *RpcStub) pushRpc(rpc *RpcEntry) bool {
-	if len(stub.pendingRpcQueue) >= RpcQueueMax {
+	// 收到待发送的rpc时，启动连接
+	stub.lazyInitConn()
+
+	select {
+	case stub.rpcChan <- rpc:
+		return true
+	default:
 		return false
 	}
-	stub.pendingRpcQueue = append(stub.pendingRpcQueue, rpc)
-	stub.trySendRpc()
-	return true
 }
 
-func (stub *RpcStub) removeRpc(callId int64) bool {
-	for i, v := range stub.pendingRpcQueue {
-		if v.CallId == callId {
-			stub.pendingRpcQueue = append(stub.pendingRpcQueue[:i], stub.pendingRpcQueue[i+1:]...)
-			return true
+func (stub *RpcStub) waitPopRpc() *RpcEntry {
+	for {
+		rpc := <-stub.rpcChan
+
+		// 队列里会有脏数据，需要清除掉已经超时的rpc
+		if rpc.getTimeoutFlag() {
+			continue
 		}
+		return rpc
 	}
-	return false
-}
-
-func (stub *RpcStub) trySendRpc() {
-	// netconn处于连接状态
-	netconn := stub.netconn.Load()
-	if netconn != nil && netconn.(network.Connection).GetConnState() == network.ConnStateConnected {
-		for {
-			if len(stub.pendingRpcQueue) <= 0 {
-				break
-			}
-			rpc := stub.pendingRpcQueue[0]
-			stub.pendingRpcQueue = stub.pendingRpcQueue[1:]
-			var msg any = nil
-			if rpc.RpcMode == RpcModeInner {
-				msg = &InnerMessage{
-					CallId:  rpc.CallId,
-					MsgID:   rpc.MsgId,
-					Guid:    0,
-					Content: rpc.ReqMsg,
-				}
-			} else if rpc.RpcMode == RpcModeOuter {
-				msg = &OuterMessage{
-					CallId:  rpc.CallId,
-					MsgID:   rpc.MsgId,
-					Content: rpc.ReqMsg,
-				}
-			}
-			err := stub.netcore.TcpSendMsg(netconn.(network.Connection).GetSessionId(), msg)
-			if err != nil {
-				break
-			}
-		}
-	}
-}
-
-func (stub *RpcStub) onConnected() {
-	go stub.trySendRpc()
 }
 
 func (stub *RpcStub) close() {
-	netconn := stub.netconn.Load()
-	if netconn != nil {
-		connnSessionId := netconn.(network.Connection).GetSessionId()
-		stub.netcore.TcpClose(connnSessionId)
+	stub.connMu.Lock()
+	defer stub.connMu.Unlock()
+
+	if stub.netconn != nil {
+		stub.netcore.TcpClose(stub.netconn.GetSessionId())
 	}
 }
 
@@ -251,4 +267,20 @@ func (mgr *RpcStubManger) selectStub(rpc *RpcEntry) *RpcStub {
 	}
 
 	return stub.(*RpcStub)
+}
+
+// 添加rpc到管道代理
+func (mgr *RpcStubManger) addRpc(rpc *RpcEntry) bool {
+	rpcStub := mgr.selectStub(rpc)
+	if rpcStub == nil {
+		log.Error("cannot find rpc stub, serverType : %v", rpc.TargetSvrType)
+		return false
+	}
+
+	if !rpcStub.pushRpc(rpc) {
+		log.Error("push rpc failed, callId : %v", rpc.CallId)
+		return false
+	}
+
+	return true
 }

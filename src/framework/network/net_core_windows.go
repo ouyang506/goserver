@@ -121,7 +121,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		}
 
 		// 上一连接的事件loop未结束
-		if conn.GetConnState() != ConnStateInit {
+		if conn.GetState() != ConnStateInit {
 			continue
 		}
 
@@ -362,7 +362,7 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 }
 
 func (netcore *NetPollCore) close(conn *NetConn) error {
-	if conn.CompareAndSwapConnState(ConnStateConnected, ConnStateClosed) {
+	if conn.CasState(ConnStateConnected, ConnStateClosed) {
 		conn.tcpConn.Close()
 		for _, h := range netcore.eventHandlers {
 			h.OnClosed(conn)
@@ -520,16 +520,12 @@ func (netcore *NetPollCore) TcpListen(host string, port int) error {
 	return nil
 }
 
-func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool, attrib map[interface{}]interface{}) (Connection, error) {
+func (netcore *NetPollCore) TcpConnect(host string, port int, autoReconnect bool) (Connection, error) {
 	conn := NewNetConn(netcore.socketSendBufferSize, netcore.socketRcvBufferSize)
 	conn.isClient = true
 	conn.autoReconnect = autoReconnect
 	conn.peerHost = host
 	conn.peerPort = port
-
-	for k, v := range attrib {
-		conn.SetAttrib(k, v)
-	}
 
 	netcore.addWaitingConn(conn.sessionId, conn)
 	return conn, nil

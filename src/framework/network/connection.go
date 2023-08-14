@@ -20,7 +20,7 @@ const (
 )
 
 var (
-	nextSessionId = int64(10000)
+	nextSessionId = int64(0)
 )
 
 func genNextSessionId() int64 {
@@ -32,8 +32,8 @@ type Connection interface {
 	GetAddr() (string, int)
 	GetPeerAddr() (peerIp string, peerPort int)
 	IsClient() bool
-	GetConnState() ConnState
-	CompareAndSwapConnState(oldState ConnState, newState ConnState) bool
+	GetState() ConnState
+	CasState(oldState ConnState, newState ConnState) bool
 	GetSendBuff() *ringbuffer.RingBuffer
 	GetRcvBuff() *ringbuffer.RingBuffer
 	SetAttrib(k interface{}, v interface{})
@@ -75,7 +75,7 @@ func (c *BaseConn) IsClient() bool {
 	return c.isClient
 }
 
-func (c *BaseConn) GetConnState() ConnState {
+func (c *BaseConn) GetState() ConnState {
 	return ConnState(atomic.LoadInt32(&c.state))
 }
 
@@ -83,7 +83,7 @@ func (c *BaseConn) SetConnState(v ConnState) {
 	atomic.StoreInt32(&c.state, int32(v))
 }
 
-func (c *BaseConn) CompareAndSwapConnState(oldState ConnState, newState ConnState) bool {
+func (c *BaseConn) CasState(oldState ConnState, newState ConnState) bool {
 	return atomic.CompareAndSwapInt32(&c.state, int32(oldState), int32(newState))
 }
 

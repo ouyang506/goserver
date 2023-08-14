@@ -10,7 +10,6 @@ import (
 
 	"framework/consts"
 	"framework/registry"
-	"utility/timer"
 
 	"framework/proto/pb"
 
@@ -19,7 +18,7 @@ import (
 
 var (
 	ErrorRpcMgrNotFound = errors.New("rpc manager not found")
-	ErrorAddRpc         = errors.New("add rpc error")
+	ErrorAddRpc         = errors.New("add rpc failed")
 	ErrorRpcTimeOut     = errors.New("rpc time out error")
 	ErrorRpcRespMsgType = errors.New("rpc response msg type error")
 )
@@ -36,7 +35,7 @@ const (
 
 var (
 	DefaultRpcTimeout = time.Second * 5
-	nextRpcCallId     = int64(1000000)
+	nextRpcCallId     = int64(0)
 
 	rpcMgrMap sync.Map = sync.Map{} //RpcModeType->*RpcManager
 )
@@ -49,12 +48,56 @@ type RpcEntry struct {
 	RouteKey      string      // 路由key
 	IsOneway      bool        // 是否单向通知
 
-	Timeout   time.Duration // 超时时间
-	WaitTimer *timer.Timer  // 超时定时器
+	ReqMsg   proto.Message        // 请求的msg数据
+	RespMsg  proto.Message        // 返回的msg数据
+	RespChan chan (proto.Message) // 收到对端返回
 
-	ReqMsg   proto.Message // 请求的msg数据
-	RespMsg  proto.Message // 返回的msg数据
-	RespChan chan (error)  // 收到对端返回或者超时通知
+	Timeout   time.Duration // 超时时间
+	IsTimeout atomic.Bool
+}
+
+func (r *RpcEntry) setTimeoutFlag() {
+	r.IsTimeout.Store(true)
+}
+
+func (r *RpcEntry) getTimeoutFlag() bool {
+	return r.IsTimeout.Load()
+}
+
+func genNextRpcCallId() int64 {
+	return atomic.AddInt64(&nextRpcCallId, 1)
+}
+
+func createRpc(rpcMode RpcModeType, targetSvrType int, req proto.Message,
+	resp proto.Message, options ...Option) *RpcEntry {
+
+	ops := LoadOptions(options...)
+	reqMsgId := pb.GetMsgIdByName(reflect.TypeOf(req).Elem().Name())
+
+	rpc := &RpcEntry{
+		RpcMode:       rpcMode,
+		CallId:        genNextRpcCallId(),
+		MsgId:         reqMsgId,
+		IsOneway:      false,
+		TargetSvrType: targetSvrType,
+		ReqMsg:        req,
+		RespMsg:       resp,
+		RespChan:      make(chan proto.Message),
+	}
+
+	if ops.RpcTimout > 0 {
+		rpc.Timeout = ops.RpcTimout
+	} else {
+		rpc.Timeout = DefaultRpcTimeout
+	}
+
+	if ops.RouteKey != "" {
+		rpc.RouteKey = ops.RouteKey
+	} else {
+		rpc.RouteKey = strconv.FormatInt(rpc.CallId, 10)
+	}
+
+	return rpc
 }
 
 // 初始化rpc管理器
@@ -101,20 +144,31 @@ func Call(targetSvrType int, req proto.Message, resp proto.Message, options ...O
 // rpc通知
 func Notify(targetSvrType int, req proto.Message, options ...Option) error {
 	rpcMode := DefaultRpcMode
-	rpc := createRpc(RpcModeInner, targetSvrType, req, nil, options...)
-	rpc.IsOneway = true
 	rpcMgr := GetRpcManager(rpcMode)
 	if rpcMgr == nil {
 		return ErrorRpcMgrNotFound
 	}
-	ret := rpcMgr.AddRpc(rpc)
-	if !ret {
+
+	rpc := createRpc(RpcModeInner, targetSvrType, req, nil, options...)
+	rpc.IsOneway = true
+	rpc.Timeout = 0
+
+	addResult := false
+	for i := 0; i < 3; i++ {
+		addResult = rpcMgr.AddRpc(rpc)
+		if addResult {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if !addResult {
 		return ErrorAddRpc
 	}
 	return nil
 }
 
-// 外部rpc同步调用
+// 外部rpc同步调用(client->gate)
 func OuterCall(req proto.Message, resp proto.Message, options ...Option) (err error) {
 	targetSvrType := consts.ServerTypeGate
 	return doCall(RpcModeOuter, targetSvrType, req, resp, options...)
@@ -131,58 +185,45 @@ func doCall(rpcMode RpcModeType, targetSvrType int,
 		return errors.New("response param nil error")
 	}
 
-	rpc := createRpc(rpcMode, targetSvrType, req, resp, options...)
-	ret := false
 	rpcMgr := GetRpcManager(rpcMode)
 	if rpcMgr == nil {
 		return ErrorRpcMgrNotFound
 	}
-	ret = rpcMgr.AddRpc(rpc)
-	if !ret {
+
+	rpc := createRpc(rpcMode, targetSvrType, req, resp, options...)
+
+	// 由于服务启动时序问题，可能暂未拉取到注册中心的服务，导致没有分配到代理管道
+	// 等待一段时间进行重试操作
+	addResult := false
+	for i := 0; i < 3; i++ {
+		addResult = rpcMgr.AddRpc(rpc)
+		if addResult {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if !addResult {
 		err = ErrorAddRpc
 		return
 	}
+	defer rpcMgr.RemoveRpc(rpc.CallId)
 
 	// wait for rpc response util timeout
-	err = <-rpc.RespChan
-	if err != nil {
-		return
+	bTimeout := false
+	tick := time.NewTicker(rpc.Timeout)
+	defer tick.Stop()
+	select {
+	case rpc.RespMsg = <-rpc.RespChan:
+		bTimeout = false
+	case <-tick.C:
+		bTimeout = true
+	}
+
+	if bTimeout {
+		err = ErrorRpcTimeOut
+		rpc.setTimeoutFlag()
 	}
 
 	return
-}
-
-func genNextRpcCallId() int64 {
-	return atomic.AddInt64(&nextRpcCallId, 1)
-}
-
-func createRpc(rpcMode RpcModeType, targetSvrType int, req proto.Message,
-	resp proto.Message, options ...Option) *RpcEntry {
-
-	ops := LoadOptions(options...)
-	reqMsgId := pb.GetMsgIdByName(reflect.TypeOf(req).Elem().Name())
-
-	rpc := &RpcEntry{
-		RpcMode:       rpcMode,
-		CallId:        genNextRpcCallId(),
-		MsgId:         reqMsgId,
-		TargetSvrType: targetSvrType,
-		ReqMsg:        req,
-		RespMsg:       resp,
-		RespChan:      make(chan error),
-	}
-
-	if ops.RpcTimout > 0 {
-		rpc.Timeout = ops.RpcTimout
-	} else {
-		rpc.Timeout = DefaultRpcTimeout
-	}
-
-	if ops.RouteKey != "" {
-		rpc.RouteKey = ops.RouteKey
-	} else {
-		rpc.RouteKey = strconv.FormatInt(rpc.CallId, 10)
-	}
-
-	return rpc
 }

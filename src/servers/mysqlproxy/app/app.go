@@ -66,7 +66,7 @@ func (app *App) Start() {
 
 // main loop
 func (app *App) update() {
-	time.Sleep(2 * time.Second)
+	//time.Sleep(2 * time.Second)
 	log.Debug("begin execute sql")
 	result, err := common.QuerySQL("select * from account where username = ?", "admin")
 	log.Debug("end execute sql, result: %+v, err: %v", result, err)
