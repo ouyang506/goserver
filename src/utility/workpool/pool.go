@@ -41,7 +41,7 @@ func (pool *Pool) Submit(task func(), ops ...Option) {
 // 最小负载分配
 func (pool *Pool) minLoadQueue() *WorkerQueue {
 	index := 0
-	minLoad := -1
+	minLoad := int64(-1)
 	for i, workQueue := range pool.workQueues {
 		size := workQueue.length()
 		if minLoad < 0 || size < minLoad {

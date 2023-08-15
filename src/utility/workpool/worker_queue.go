@@ -1,52 +1,69 @@
 package workpool
 
 import (
+	"container/list"
 	"sync"
-	"utility/queue"
+	"sync/atomic"
 )
 
 type WorkerQueue struct {
-	queue *queue.LockFreeQueue
+	loopFlag atomic.Bool
+
+	queue *list.List
+	len   atomic.Int64
+	lock  sync.Locker
 	cond  *sync.Cond
 }
 
 func newWorkQueue() *WorkerQueue {
+	l := NewSpinLock()
+	//l := &sync.Mutex{}
 	wq := &WorkerQueue{
-		queue: queue.NewLockFreeQueue(),
-		cond:  sync.NewCond(NewSpinLock()),
-		//cond: sync.NewCond(&sync.Mutex{}),
+		queue: list.New(),
+		lock:  l,
+		cond:  sync.NewCond(l),
 	}
-
-	go wq.loop()
 	return wq
 }
 
 func (wq *WorkerQueue) insert(work *Worker) {
-	wq.queue.Enqueue(work)
+	wq.lazyloop()
+
+	wq.lock.Lock()
+	defer wq.lock.Unlock()
+
+	wq.queue.PushBack(work)
+	wq.len.Add(1)
 	wq.cond.Signal()
 }
 
+func (wq *WorkerQueue) length() int64 {
+	return wq.len.Load()
+}
+
 func (wq *WorkerQueue) pop() *Worker {
-	elem := wq.queue.Dequeue()
-	if elem == nil {
-		return nil
+	wq.lock.Lock()
+	defer wq.lock.Unlock()
+
+	for wq.queue.Len() == 0 {
+		wq.cond.Wait()
 	}
-	return elem.(*Worker)
+
+	elem := wq.queue.Front()
+	wq.queue.Remove(elem)
+	wq.len.Add(-1)
+	return elem.Value.(*Worker)
 }
 
-func (wq *WorkerQueue) length() int {
-	return int(wq.queue.Length())
-}
+func (wq *WorkerQueue) lazyloop() {
+	if !wq.loopFlag.CompareAndSwap(false, true) {
+		return
+	}
 
-func (wq *WorkerQueue) loop() {
-	for {
-		worker := wq.pop()
-		if worker != nil {
+	go func() {
+		for {
+			worker := wq.pop()
 			worker.run()
-		} else {
-			wq.cond.L.Lock()
-			wq.cond.Wait()
-			wq.cond.L.Unlock()
 		}
-	}
+	}()
 }
