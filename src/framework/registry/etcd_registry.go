@@ -130,7 +130,7 @@ func (reg *EtcdRegistry) addService(skey ServiceKey) bool {
 		return false
 	}
 
-	slices.Insert[[]ServiceKey, ServiceKey](reg.services, index, skey)
+	reg.services = slices.Insert(reg.services, index, skey)
 	return true
 }
 

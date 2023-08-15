@@ -35,9 +35,8 @@ func (mgr *NetMgr) Start() {
 	conf := config.GetConfig()
 
 	// startup rpc
-	netEventhandler := NewNetEventHandler()
 	msgHandler := handler.NewMessageHandler()
-	rpc.InitRpc(rpc.RpcModeInner, msgHandler, rpc.WithNetEventHandler(netEventhandler))
+	rpc.InitRpc(rpc.RpcModeInner, msgHandler)
 	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 
 	// register self endpoint to center

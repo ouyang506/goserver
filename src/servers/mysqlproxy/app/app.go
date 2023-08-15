@@ -83,5 +83,5 @@ func (app *App) update() {
 	notify := &ss.NotifyExecuteSql{}
 	notify.Value = new(string)
 	*notify.Value = "test_notify"
-	rpc.Notify(consts.ServerTypeMysqlProxy, notify)
+	rpc.Notify(consts.ServerTypeMysqlProxy, 0, notify)
 }

@@ -7,8 +7,8 @@ import (
 type Option func(ops *Options)
 
 type Options struct {
-	RpcTimout       time.Duration      // rpc超时时间
-	RouteKey        string             // rpc路由key
+	RpcTimout       *time.Duration     // rpc超时时间
+	RpcRouteType    *RpcRouteType      // 路由规则
 	NetEventHandler RpcNetEventHandler // 自定义网络事件处理
 }
 
@@ -22,13 +22,13 @@ func LoadOptions(options ...Option) *Options {
 
 func WithTimeout(timeout time.Duration) Option {
 	return func(ops *Options) {
-		ops.RpcTimout = timeout
+		ops.RpcTimout = &timeout
 	}
 }
 
-func WithRouteKey(routeKey string) Option {
+func WithRouteType(routeType RpcRouteType) Option {
 	return func(ops *Options) {
-		ops.RouteKey = routeKey
+		ops.RpcRouteType = &routeType
 	}
 }
 

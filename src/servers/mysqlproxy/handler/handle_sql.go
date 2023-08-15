@@ -54,3 +54,12 @@ func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.
 
 	}
 }
+
+func (h *MessageHandler) HandleRpcNotifyExecuteSql(notify *ss.NotifyExecuteSql) {
+	reqJson, _ := json.Marshal(notify)
+	log.Debug("rcv NotifyExecuteSql : %s", string(reqJson))
+	a := 1
+	a--
+	b := 100 / a
+	_ = b
+}

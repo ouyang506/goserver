@@ -12,10 +12,6 @@ type ServiceKey struct {
 }
 
 func ServiceKeyCmp(a ServiceKey, b ServiceKey) int {
-	if a == b {
-		return 0
-	}
-
 	switch {
 	case a.ServerType < b.ServerType:
 		return -1

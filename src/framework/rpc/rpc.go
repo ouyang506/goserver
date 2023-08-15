@@ -3,7 +3,6 @@ package rpc
 import (
 	"errors"
 	"reflect"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,11 +41,13 @@ var (
 
 type RpcEntry struct {
 	RpcMode       RpcModeType // rpc模式
-	CallId        int64       // rpc请求唯一ID
-	MsgId         int         // 消息ID
 	TargetSvrType int         // 目标服务类型
-	RouteKey      string      // 路由key
 	IsOneway      bool        // 是否单向通知
+
+	CallId    int64        // rpc请求唯一ID
+	MsgId     int          // 消息ID
+	Guid      int64        // InnerMsg传输guid,同时作为路由的key
+	RouteType RpcRouteType // 路由方式
 
 	ReqMsg   proto.Message        // 请求的msg数据
 	RespMsg  proto.Message        // 返回的msg数据
@@ -68,7 +69,7 @@ func genNextRpcCallId() int64 {
 	return atomic.AddInt64(&nextRpcCallId, 1)
 }
 
-func createRpc(rpcMode RpcModeType, targetSvrType int, req proto.Message,
+func createRpc(rpcMode RpcModeType, targetSvrType int, guid int64, req proto.Message,
 	resp proto.Message, options ...Option) *RpcEntry {
 
 	ops := LoadOptions(options...)
@@ -80,21 +81,22 @@ func createRpc(rpcMode RpcModeType, targetSvrType int, req proto.Message,
 		MsgId:         reqMsgId,
 		IsOneway:      false,
 		TargetSvrType: targetSvrType,
+		Guid:          guid,
 		ReqMsg:        req,
 		RespMsg:       resp,
 		RespChan:      make(chan proto.Message),
 	}
 
-	if ops.RpcTimout > 0 {
-		rpc.Timeout = ops.RpcTimout
+	if ops.RpcTimout != nil {
+		rpc.Timeout = *ops.RpcTimout
 	} else {
 		rpc.Timeout = DefaultRpcTimeout
 	}
 
-	if ops.RouteKey != "" {
-		rpc.RouteKey = ops.RouteKey
+	if ops.RpcRouteType != nil {
+		rpc.RouteType = *ops.RpcRouteType
 	} else {
-		rpc.RouteKey = strconv.FormatInt(rpc.CallId, 10)
+		rpc.RouteType = RandomRoute
 	}
 
 	return rpc
@@ -136,20 +138,25 @@ func FetchWatchService(mode RpcModeType, reg registry.Registry) error {
 }
 
 // rpc同步调用
-func Call(targetSvrType int, req proto.Message, resp proto.Message, options ...Option) error {
+func Call(targetSvrType int, guid int64, req proto.Message, resp proto.Message, options ...Option) error {
 	rpcMode := DefaultRpcMode
-	return doCall(rpcMode, targetSvrType, req, resp, options...)
+	return doCall(rpcMode, targetSvrType, guid, req, resp, options...)
+}
+
+// rpc to mysql proxy server
+func CallMysqlProxy(req proto.Message, resp proto.Message, options ...Option) error {
+	return Call(consts.ServerTypeMysqlProxy, 0, req, resp, options...)
 }
 
 // rpc通知
-func Notify(targetSvrType int, req proto.Message, options ...Option) error {
+func Notify(targetSvrType int, guid int64, req proto.Message, options ...Option) error {
 	rpcMode := DefaultRpcMode
 	rpcMgr := GetRpcManager(rpcMode)
 	if rpcMgr == nil {
 		return ErrorRpcMgrNotFound
 	}
 
-	rpc := createRpc(RpcModeInner, targetSvrType, req, nil, options...)
+	rpc := createRpc(RpcModeInner, targetSvrType, guid, req, nil, options...)
 	rpc.IsOneway = true
 	rpc.Timeout = 0
 
@@ -171,11 +178,11 @@ func Notify(targetSvrType int, req proto.Message, options ...Option) error {
 // 外部rpc同步调用(client->gate)
 func OuterCall(req proto.Message, resp proto.Message, options ...Option) (err error) {
 	targetSvrType := consts.ServerTypeGate
-	return doCall(RpcModeOuter, targetSvrType, req, resp, options...)
+	return doCall(RpcModeOuter, targetSvrType, 0, req, resp, options...)
 }
 
 // rpc同步调用
-func doCall(rpcMode RpcModeType, targetSvrType int,
+func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 	req proto.Message, resp proto.Message, options ...Option) (err error) {
 	if req == nil {
 		return errors.New("request param nil error")
@@ -190,7 +197,7 @@ func doCall(rpcMode RpcModeType, targetSvrType int,
 		return ErrorRpcMgrNotFound
 	}
 
-	rpc := createRpc(rpcMode, targetSvrType, req, resp, options...)
+	rpc := createRpc(rpcMode, targetSvrType, guid, req, resp, options...)
 
 	// 由于服务启动时序问题，可能暂未拉取到注册中心的服务，导致没有分配到代理管道
 	// 等待一段时间进行重试操作

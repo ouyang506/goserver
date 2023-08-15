@@ -6,6 +6,7 @@ import (
 	"framework/proto/pb"
 	"reflect"
 	"runtime"
+	"utility/workpool"
 )
 
 // rpc网络事件回调
@@ -16,7 +17,8 @@ type RpcNetEventHandler interface {
 }
 
 type RpcNetEventHandlerBase struct {
-	owner *RpcManager
+	owner          *RpcManager
+	processMsgPool *workpool.Pool
 }
 
 func (h *RpcNetEventHandlerBase) SetOwner(owner *RpcManager) {
@@ -55,7 +57,11 @@ type InnerNetEventHandler struct {
 }
 
 func NewInnerNetEventHandler() *InnerNetEventHandler {
-	return &InnerNetEventHandler{}
+	return &InnerNetEventHandler{
+		RpcNetEventHandlerBase: RpcNetEventHandlerBase{
+			processMsgPool: workpool.NewPool(64),
+		},
+	}
 }
 
 func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
@@ -78,27 +84,30 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 			return
 		}
 
-		defer func() {
-			if r := recover(); r != nil {
-				buff := make([]byte, 4096)
-				n := runtime.Stack(buff, false)
-				log.Error("handler rcv msg panic, msgId: %v, stack : %s", msgId, string(buff[:n]))
+		h.processMsgPool.Submit(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					buff := make([]byte, 4096)
+					n := runtime.Stack(buff, false)
+					log.Error("handler rcv msg panic, msgId: %v, stack : %s", msgId, string(buff[:n]))
+				}
+			}()
+
+			if respMsg == nil {
+				method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
+			} else {
+				method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
+
+				respInnerMsg := &InnerMessage{}
+				respInnerMsg.CallId = rcvInnerMsg.CallId
+				respInnerMsg.MsgID = 0
+				respInnerMsg.Guid = rcvInnerMsg.Guid
+				respInnerMsg.Content = respMsg
+
+				h.GetOwner().TcpSendMsg(c.GetSessionId(), respInnerMsg)
 			}
-		}()
+		}, workpool.WithWorkerHashKey(uint64(rcvInnerMsg.Guid)))
 
-		if respMsg == nil {
-			method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
-		} else {
-			method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
-
-			respInnerMsg := &InnerMessage{}
-			respInnerMsg.CallId = rcvInnerMsg.CallId
-			respInnerMsg.MsgID = 0
-			respInnerMsg.Content = respMsg
-
-			h.GetOwner().TcpSendMsg(c.GetSessionId(), respInnerMsg)
-		}
-		return
 	default:
 		return
 	}

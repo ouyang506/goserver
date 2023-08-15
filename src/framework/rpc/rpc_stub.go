@@ -4,26 +4,27 @@ import (
 	"fmt"
 	"framework/log"
 	"framework/network"
-	"sort"
 	"sync"
 	"time"
+
+	"golang.org/x/exp/slices"
 )
 
 const (
 	RpcQueueMax = 4096
 )
 
-type StubSortByIpPort []*RpcStub
+// type StubSortByIpPort []*RpcStub
 
-func (s StubSortByIpPort) Len() int {
-	return len(s)
-}
-func (s StubSortByIpPort) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-func (s StubSortByIpPort) Less(i, j int) bool {
-	return s[i].routeKey() < s[j].routeKey()
-}
+// func (s StubSortByIpPort) Len() int {
+// 	return len(s)
+// }
+// func (s StubSortByIpPort) Swap(i, j int) {
+// 	s[i], s[j] = s[j], s[i]
+// }
+// func (s StubSortByIpPort) Less(i, j int) bool {
+// 	return s[i].routeKey() < s[j].routeKey()
+// }
 
 // rpc网络代理
 type RpcStub struct {
@@ -49,6 +50,30 @@ func newRpcStub(netcore network.NetworkCore,
 		rpcChan:    make(chan (*RpcEntry), RpcQueueMax),
 	}
 	return stub
+}
+
+func stubCmp(a *RpcStub, b *RpcStub) int {
+	switch {
+	case a.ServerType < b.ServerType:
+		return -1
+	case a.ServerType > b.ServerType:
+		return 1
+	}
+
+	switch {
+	case a.RemoteIP < b.RemoteIP:
+		return -1
+	case a.RemoteIP > b.RemoteIP:
+		return 1
+	}
+
+	switch {
+	case a.RemotePort < b.RemotePort:
+		return -1
+	case a.RemotePort > b.RemotePort:
+		return 1
+	}
+	return 0
 }
 
 func (stub *RpcStub) routeKey() string {
@@ -88,6 +113,11 @@ func (stub *RpcStub) loopSend() {
 			rpc = current
 		} else {
 			rpc = stub.waitPopRpc()
+			if rpc == nil {
+				log.Info("stub stop loop send msg, serverType: %v, remoteIp: %v, remotePort: %v",
+					stub.ServerType, stub.RemoteIP, stub.RemotePort)
+				return
+			}
 		}
 
 		var msg any = nil
@@ -129,7 +159,10 @@ func (stub *RpcStub) pushRpc(rpc *RpcEntry) bool {
 
 func (stub *RpcStub) waitPopRpc() *RpcEntry {
 	for {
-		rpc := <-stub.rpcChan
+		rpc, ok := <-stub.rpcChan
+		if !ok {
+			return nil
+		}
 
 		// 队列里会有脏数据，需要清除掉已经超时的rpc
 		if rpc.getTimeoutFlag() {
@@ -146,6 +179,8 @@ func (stub *RpcStub) close() {
 	if stub.netconn != nil {
 		stub.netcore.TcpClose(stub.netconn.GetSessionId())
 	}
+
+	close(stub.rpcChan)
 }
 
 // 网络代理管道管理器
@@ -159,7 +194,7 @@ type RpcStubManger struct {
 type ServerTypeStubs struct {
 	serverType int
 	stubs      []*RpcStub
-	router     RpcRouter
+	routers    map[RpcRouteType]RpcRouter
 }
 
 func newRpcStubManager(netcore network.NetworkCore) *RpcStubManger {
@@ -177,18 +212,35 @@ func (mgr *RpcStubManger) addStub(serverType int, remoteIp string, remotePort in
 
 	typeStubs, ok := mgr.stubs[serverType]
 	if !ok {
+		routers := make(map[RpcRouteType]RpcRouter)
+		routerTypes := []RpcRouteType{RandomRoute, ModRoute, ConsistRoute}
+		for _, routeType := range routerTypes {
+			routers[routeType] = NewRpcRouter(routeType)
+		}
 		typeStubs = &ServerTypeStubs{
 			serverType: serverType,
-			router:     newConsistRouter(),
+			routers:    routers,
 		}
 		mgr.stubs[serverType] = typeStubs
+	} else {
+		for _, stub := range typeStubs.stubs {
+			if stub.RemoteIP == remoteIp && stub.RemotePort == remotePort {
+				log.Error("stub has been existed, serverType: remoteIp: %v, remotePort: %v",
+					serverType, remoteIp, remotePort)
+				return false
+			}
+		}
 	}
 	stub := newRpcStub(mgr.netcore, serverType, remoteIp, remotePort)
 
-	typeStubs.stubs = append(typeStubs.stubs, stub)
-	sort.Sort(StubSortByIpPort(typeStubs.stubs))
+	i, ok := slices.BinarySearchFunc(typeStubs.stubs, stub, stubCmp)
+	if !ok {
+		typeStubs.stubs = slices.Insert(typeStubs.stubs, i, stub)
+	}
 
-	typeStubs.router.UpdateRoute(stub.routeKey(), stub)
+	for _, router := range typeStubs.routers {
+		router.UpdateMember(stub.routeKey(), stub)
+	}
 	log.Info("add rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 	return true
 }
@@ -203,7 +255,9 @@ func (mgr *RpcStubManger) delStub(serverType int, remoteIp string, remotePort in
 		for i, stub := range typeStubs.stubs {
 			if stub.RemoteIP == remoteIp && stub.RemotePort == remotePort {
 				typeStubs.stubs = append(typeStubs.stubs[:i], typeStubs.stubs[i+1:]...)
-				typeStubs.router.DelRoute(stub.routeKey())
+				for _, router := range typeStubs.routers {
+					router.DeleteMember(stub.routeKey())
+				}
 				stub.close()
 				log.Info("delete rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 				return true
@@ -226,7 +280,9 @@ func (mgr *RpcStubManger) delStubsByType(serverType int) bool {
 		return false
 	}
 	for _, stub := range typeStubs.stubs {
-		typeStubs.router.DelRoute(stub.routeKey())
+		for _, router := range typeStubs.routers {
+			router.DeleteMember(stub.routeKey())
+		}
 		stub.close()
 		log.Debug("delete rpc stub [%v][%v:%v]", stub.ServerType, stub.RemoteIP, stub.RemotePort)
 	}
@@ -261,7 +317,14 @@ func (mgr *RpcStubManger) selectStub(rpc *RpcEntry) *RpcStub {
 		return nil
 	}
 
-	stub := typeStubs.router.SelectRoute(rpc.RouteKey)
+	routeType := rpc.RouteType
+	router, ok := typeStubs.routers[routeType]
+	if !ok {
+		log.Error("can not find the router, route type: %v", routeType)
+		return nil
+	}
+
+	stub := router.SelectMember(rpc.Guid)
 	if stub == nil {
 		return nil
 	}
