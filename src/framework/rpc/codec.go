@@ -42,6 +42,7 @@ func (cc *InnerMessageCodec) Encode(c network.Connection, in interface{}) (inter
 		contentBytes, _ := proto.Marshal(innerMsg.Content)
 		out = append(out, contentBytes...)
 	}
+
 	return out, true, nil
 }
 
@@ -52,45 +53,46 @@ func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (inter
 	}
 
 	skip := 0
-	msg := &InnerMessage{}
-	msg.CallId = int64(binary.LittleEndian.Uint64(innerMsgBytes))
+	innerMsg := &InnerMessage{}
+	innerMsg.CallId = int64(binary.LittleEndian.Uint64(innerMsgBytes))
 	skip += 8
-	msg.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
+	innerMsg.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
 	skip += 4
 
 	content := innerMsgBytes[skip:]
 	switch {
-	case msg.MsgID == 0: //rpc response
-		rpcEntry := cc.rpcMgr.GetRpc(msg.CallId)
+	case innerMsg.MsgID == 0: //rpc response
+		rpcEntry := cc.rpcMgr.GetRpc(innerMsg.CallId)
 		if rpcEntry == nil {
 			// rpc has been timeout
+			log.Error("rpc has been removed, callId = %v", innerMsg.CallId)
 			return nil, false, nil
 		}
 		err := proto.Unmarshal(content, rpcEntry.RespMsg)
 		if err != nil {
 			// ignore the invalid response
 			log.Error("unmarshal rpc response error: %v, callId: %v, reqMsgId: %v",
-				err, msg.CallId, rpcEntry.MsgId)
+				err, innerMsg.CallId, rpcEntry.MsgId)
 			return nil, false, nil
 		}
-		msg.Content = rpcEntry.RespMsg
+		innerMsg.Content = rpcEntry.RespMsg
 
-	case msg.MsgID > 0: //rpc request
-		reqMsg, _ := pb.GetProtoMsgById(msg.MsgID)
+	case innerMsg.MsgID > 0: //rpc request
+		reqMsg, _ := pb.GetProtoMsgById(innerMsg.MsgID)
 		if reqMsg == nil {
-			return nil, false, fmt.Errorf("invalid message id %v", msg.MsgID)
+			return nil, false, fmt.Errorf("invalid message id %v", innerMsg.MsgID)
 		}
 
 		err := proto.Unmarshal(content, reqMsg)
 		if err != nil {
-			return nil, false, fmt.Errorf("unmarshal message error: %v, msgId: %v", err, msg.MsgID)
+			return nil, false, fmt.Errorf("unmarshal message error: %v, msgId: %v", err, innerMsg.MsgID)
 		}
-		msg.Content = reqMsg
+		innerMsg.Content = reqMsg
 	default:
-		return nil, false, fmt.Errorf("invalid message id %v", msg.MsgID)
+		return nil, false, fmt.Errorf("invalid message id %v", innerMsg.MsgID)
 	}
 
-	return msg, true, nil
+	return innerMsg, true, nil
 }
 
 // 客户端协议

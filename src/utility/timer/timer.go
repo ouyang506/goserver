@@ -95,7 +95,7 @@ type TimerWheel struct {
 
 	expiredList []*Timer
 
-	stopChan chan bool
+	stopChan chan struct{}
 }
 
 func NewTimerWheel(option *Option) *TimerWheel {
@@ -132,7 +132,7 @@ func NewTimerWheel(option *Option) *TimerWheel {
 
 	tw.expiredList = []*Timer{}
 
-	tw.stopChan = make(chan bool)
+	tw.stopChan = make(chan struct{}, 1)
 	return tw
 }
 
@@ -157,7 +157,7 @@ func (tw *TimerWheel) Start() {
 
 func (tw *TimerWheel) Stop() {
 	select {
-	case tw.stopChan <- true:
+	case tw.stopChan <- struct{}{}:
 	default:
 	}
 }
@@ -217,11 +217,11 @@ func (tw *TimerWheel) RemoveTimer(n *Timer) (ret bool) {
 	return
 }
 
-func (tw *TimerWheel) After(duration time.Duration) (chan bool, *Timer) {
-	ch := make(chan bool)
+func (tw *TimerWheel) After(duration time.Duration) (<-chan struct{}, *Timer) {
+	ch := make(chan struct{}, 1)
 	node := tw.AddTimer(duration, func() {
 		select {
-		case ch <- true:
+		case ch <- struct{}{}:
 		default:
 		}
 	})

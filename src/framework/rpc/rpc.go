@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"framework/consts"
+	"framework/log"
 	"framework/registry"
 
 	"framework/proto/pb"
@@ -34,7 +34,7 @@ const (
 
 var (
 	DefaultRpcTimeout = time.Second * 5
-	nextRpcCallId     = int64(0)
+	nextRpcCallId     atomic.Int64
 
 	rpcMgrMap sync.Map = sync.Map{} //RpcModeType->*RpcManager
 )
@@ -49,9 +49,9 @@ type RpcEntry struct {
 	Guid      int64        // InnerMsg传输guid,同时作为路由的key
 	RouteType RpcRouteType // 路由方式
 
-	ReqMsg   proto.Message        // 请求的msg数据
-	RespMsg  proto.Message        // 返回的msg数据
-	RespChan chan (proto.Message) // 收到对端返回
+	ReqMsg     proto.Message   // 请求的msg数据
+	RespMsg    proto.Message   // 返回的msg数据
+	NotifyChan chan (struct{}) // 收到对端返回通知
 
 	Timeout   time.Duration // 超时时间
 	IsTimeout atomic.Bool
@@ -66,7 +66,7 @@ func (r *RpcEntry) getTimeoutFlag() bool {
 }
 
 func genNextRpcCallId() int64 {
-	return atomic.AddInt64(&nextRpcCallId, 1)
+	return nextRpcCallId.Add(1)
 }
 
 func createRpc(rpcMode RpcModeType, targetSvrType int, guid int64, req proto.Message,
@@ -84,7 +84,7 @@ func createRpc(rpcMode RpcModeType, targetSvrType int, guid int64, req proto.Mes
 		Guid:          guid,
 		ReqMsg:        req,
 		RespMsg:       resp,
-		RespChan:      make(chan proto.Message),
+		NotifyChan:    make(chan struct{}, 1),
 	}
 
 	if ops.RpcTimout != nil {
@@ -143,11 +143,6 @@ func Call(targetSvrType int, guid int64, req proto.Message, resp proto.Message, 
 	return doCall(rpcMode, targetSvrType, guid, req, resp, options...)
 }
 
-// rpc to mysql proxy server
-func CallMysqlProxy(req proto.Message, resp proto.Message, options ...Option) error {
-	return Call(consts.ServerTypeMysqlProxy, 0, req, resp, options...)
-}
-
 // rpc通知
 func Notify(targetSvrType int, guid int64, req proto.Message, options ...Option) error {
 	rpcMode := DefaultRpcMode
@@ -175,10 +170,9 @@ func Notify(targetSvrType int, guid int64, req proto.Message, options ...Option)
 	return nil
 }
 
-// 外部rpc同步调用(client->gate)
-func OuterCall(req proto.Message, resp proto.Message, options ...Option) (err error) {
-	targetSvrType := consts.ServerTypeGate
-	return doCall(RpcModeOuter, targetSvrType, 0, req, resp, options...)
+// 外部rpc同步调用
+func OuterCall(targetSvrType int, guid int64, req proto.Message, resp proto.Message, options ...Option) error {
+	return doCall(RpcModeOuter, targetSvrType, guid, req, resp, options...)
 }
 
 // rpc同步调用
@@ -199,8 +193,9 @@ func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 
 	rpc := createRpc(rpcMode, targetSvrType, guid, req, resp, options...)
 
-	// 由于服务启动时序问题，可能暂未拉取到注册中心的服务，导致没有分配到代理管道
-	// 等待一段时间进行重试操作
+	// 1.由于服务启动时序问题，可能暂未拉取到注册中心的服务，导致没有分配到代理管道
+	// 2.发送缓冲区已满
+	// TODO: 需要扣除一下等待时间
 	addResult := false
 	for i := 0; i < 3; i++ {
 		addResult = rpcMgr.AddRpc(rpc)
@@ -218,17 +213,18 @@ func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 
 	// wait for rpc response util timeout
 	bTimeout := false
-	tick := time.NewTicker(rpc.Timeout)
-	defer tick.Stop()
+	timer := time.NewTimer(rpc.Timeout)
+	defer timer.Stop()
 	select {
-	case rpc.RespMsg = <-rpc.RespChan:
-		bTimeout = false
-	case <-tick.C:
+	case <-rpc.NotifyChan:
+		break
+	case <-timer.C:
 		bTimeout = true
 	}
 
 	if bTimeout {
 		err = ErrorRpcTimeOut
+		log.Error("rpc timeout, callId: %v", rpc.CallId)
 		rpc.setTimeoutFlag()
 	}
 

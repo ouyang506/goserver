@@ -1,7 +1,7 @@
 package netmgr
 
 import (
-	"framework/consts"
+	"common"
 	"framework/registry"
 	"framework/rpc"
 	"mysqlproxy/config"
@@ -48,7 +48,7 @@ func (mgr *NetMgr) Start() {
 	regCenter := registry.NewEtcdRegistry(etcdConf)
 
 	skey := registry.ServiceKey{
-		ServerType: consts.ServerTypeMysqlProxy,
+		ServerType: common.ServerTypeMysqlProxy,
 		IP:         conf.ListenConf.Ip,
 		Port:       conf.ListenConf.Port,
 	}

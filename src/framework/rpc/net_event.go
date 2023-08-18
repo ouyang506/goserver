@@ -59,7 +59,7 @@ type InnerNetEventHandler struct {
 func NewInnerNetEventHandler() *InnerNetEventHandler {
 	return &InnerNetEventHandler{
 		RpcNetEventHandlerBase: RpcNetEventHandlerBase{
-			processMsgPool: workpool.NewPool(64),
+			processMsgPool: workpool.NewPool(4096),
 		},
 	}
 }
@@ -67,7 +67,9 @@ func NewInnerNetEventHandler() *InnerNetEventHandler {
 func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 	rcvInnerMsg := msg.(*InnerMessage)
 	msgId := rcvInnerMsg.MsgID
-	log.Debug("NetEvent OnRcvMsg, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
+	log.Debug("NetEvent OnRcvMsg, sessionId: %d, callId : %v, msgId: %d",
+		c.GetSessionId(), rcvInnerMsg.CallId, msgId)
+
 	switch {
 	case msgId < 0:
 		log.Error("receive wrong message id, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
@@ -84,6 +86,10 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 			return
 		}
 
+		var ops []workpool.Option
+		if rcvInnerMsg.Guid > 0 {
+			ops = append(ops, workpool.WithWorkerHashKey(uint64(rcvInnerMsg.Guid)))
+		}
 		h.processMsgPool.Submit(func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -106,7 +112,7 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 
 				h.GetOwner().TcpSendMsg(c.GetSessionId(), respInnerMsg)
 			}
-		}, workpool.WithWorkerHashKey(uint64(rcvInnerMsg.Guid)))
+		}, ops...)
 
 	default:
 		return

@@ -77,15 +77,16 @@ func (r *RandomRouter) DeleteMember(memberKey string) {
 }
 
 func (r *RandomRouter) SelectMember(key any) any {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	size := len(r.memberArr)
 	if size <= 0 {
 		return nil
 	}
 
-	i := int(r.rand.Int31()) % size
+	// random非线程安全,需要加写锁,r.mu.Lock()
+	i := int(r.rand.Uint32() % uint32(size))
 	memberKey := r.memberArr[i]
 
 	v, ok := r.memberMap[memberKey]

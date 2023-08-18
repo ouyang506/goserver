@@ -47,7 +47,7 @@ type NetPollCore struct {
 	socketTcpNoDelay     bool
 	codecs               []Codec
 
-	waitConnTimer time.Ticker
+	waitConnTicker time.Ticker
 
 	connMapMutex sync.RWMutex
 	waitConnMap  map[int64]*NetConn // 待发起的连接(client)
@@ -65,22 +65,22 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore.codecs = options.codecs
 	netcore.connectedMap = map[int64]*NetConn{}
 	netcore.waitConnMap = map[int64]*NetConn{}
-	netcore.waitConnTimer = *time.NewTicker(time.Duration(100) * time.Millisecond)
+	netcore.waitConnTicker = *time.NewTicker(time.Duration(100) * time.Millisecond)
 
 	return netcore
 }
 
 func (netcore *NetPollCore) Start() {
-	netcore.startWaitConnTimer()
+	netcore.checkWaitConn()
 }
 
 func (netcore *NetPollCore) Stop() {
 	netcore.ctxCancelFn()
 }
 
-func (netcore *NetPollCore) startWaitConnTimer() {
+func (netcore *NetPollCore) checkWaitConn() {
 	go func() {
-		defer netcore.waitConnTimer.Stop()
+		defer netcore.waitConnTicker.Stop()
 
 		ctx, cancel := context.WithCancel(netcore.ctx)
 		defer cancel()
@@ -88,7 +88,7 @@ func (netcore *NetPollCore) startWaitConnTimer() {
 		for {
 			bStop := false
 			select {
-			case t := <-netcore.waitConnTimer.C:
+			case t := <-netcore.waitConnTicker.C:
 				{
 					netcore.onWaitConnTimer(t)
 				}
@@ -126,7 +126,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		}
 
 		endpoint := fmt.Sprintf("%s:%d", conn.peerHost, conn.peerPort)
-		dialer := net.Dialer{Timeout: time.Duration(200) * time.Millisecond}
+		dialer := net.Dialer{Timeout: time.Duration(2000) * time.Millisecond}
 		tcpConn, err := dialer.Dial("tcp", endpoint)
 		if err != nil {
 			log.Error("dial tcp error: %v, endpoint: %v", err, endpoint)
@@ -225,14 +225,21 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 			}
 			tcpConn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 			n, err := tcpConn.Read(buff)
-			if err != nil || n <= 0 {
+			if err != nil {
 				if !errors.Is(err, os.ErrDeadlineExceeded) {
 					log.Error("tcp conn read error:%v, readLen:%v", err, n)
 					bClose = true
 				}
 				break
-			} else {
-				totalRead += n
+			}
+
+			if n <= 0 {
+				break
+			}
+			totalRead += n
+			//此段缓冲区未读满，无需进行后续读取，否则数据中空错位
+			if n != len(buff) {
+				break
 			}
 		}
 
@@ -295,10 +302,11 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 	for {
 		bClose := false
 		for {
-			timeout := false
-			t := time.NewTimer(time.Millisecond * 100)
+			// timeout := false
+			// t := time.NewTimer(time.Millisecond * 500)
+			var msg any = nil
 			select {
-			case msg := <-conn.sendChann:
+			case msg = <-conn.sendChann:
 				var in interface{} = nil
 				in = msg
 				for _, codec := range netcore.codecs {
@@ -313,10 +321,14 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 						break
 					}
 				}
-			case <-t.C:
-				timeout = true
+				// case <-t.C:
+				// 	timeout = true
 			}
-			if timeout || bClose {
+
+			if bClose {
+				break
+			}
+			if msg != nil {
 				break
 			}
 		}
@@ -324,21 +336,27 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 		totalWrite := 0
 		if !conn.sendBuff.IsEmpty() {
 			head, tail := conn.sendBuff.PeekAll()
-			for _, data := range [2][]byte{head, tail} {
-				if len(data) <= 0 {
+			for _, buff := range [2][]byte{head, tail} {
+				if len(buff) <= 0 {
 					break
 				}
 				conn.tcpConn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
-				n, err := conn.tcpConn.Write(data)
-				if err != nil || n <= 0 {
+				n, err := conn.tcpConn.Write(buff)
+				if err != nil {
 					if !errors.Is(err, os.ErrDeadlineExceeded) {
 						log.Error("tcp conn write error:%v, writeLen:%v, sessionId:%v",
 							err, n, conn.sessionId)
 						bClose = true
 						break
 					}
-				} else {
-					totalWrite += n
+				}
+				if n <= 0 {
+					break
+				}
+				totalWrite += n
+				// 此段缓冲区数据未发送完，无需进行后续发送，否则数据错位
+				if n != len(buff) {
+					break
 				}
 			}
 		}

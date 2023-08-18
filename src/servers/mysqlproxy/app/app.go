@@ -2,8 +2,8 @@ package app
 
 import (
 	"common"
+	"common/mysqlutil"
 	"fmt"
-	"framework/consts"
 	"framework/log"
 	"framework/proto/pb/ss"
 	"framework/rpc"
@@ -69,9 +69,8 @@ func (app *App) Start() {
 
 // main loop
 func (app *App) update() {
-	//time.Sleep(2 * time.Second)
 	log.Debug("begin execute sql")
-	result, err := common.QuerySQL("select * from account where username = ?", "admin")
+	result, err := mysqlutil.QuerySQL("select * from account where username = ?", "admin")
 	log.Debug("end execute sql, result: %+v, err: %v", result, err)
 	// if err != nil {
 	// 	for _, row := range result.Rows {
@@ -83,5 +82,5 @@ func (app *App) update() {
 	notify := &ss.NotifyExecuteSql{}
 	notify.Value = new(string)
 	*notify.Value = "test_notify"
-	rpc.Notify(consts.ServerTypeMysqlProxy, 0, notify)
+	rpc.Notify(common.ServerTypeMysqlProxy, 0, notify)
 }

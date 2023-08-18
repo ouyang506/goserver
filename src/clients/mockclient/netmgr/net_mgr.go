@@ -1,7 +1,7 @@
 package netmgr
 
 import (
-	"framework/consts"
+	"common"
 	"framework/rpc"
 	"mockclient/handler"
 )
@@ -24,7 +24,7 @@ func (mgr *NetMgr) RemoveGateStubs() {
 	if rpcmgr == nil {
 		return
 	}
-	rpcmgr.DelStubsByType(consts.ServerTypeGate)
+	rpcmgr.DelStubsByType(common.ServerTypeGate)
 }
 
 func (mgr *NetMgr) AddGateStub(remoteIP string, remotePort int) {
@@ -32,7 +32,7 @@ func (mgr *NetMgr) AddGateStub(remoteIP string, remotePort int) {
 	if rpcmgr == nil {
 		return
 	}
-	rpcmgr.AddStub(consts.ServerTypeGate, remoteIP, remotePort)
+	rpcmgr.AddStub(common.ServerTypeGate, remoteIP, remotePort)
 }
 
 func (mgr *NetMgr) FindGateStub(remoteIP string, remotePort int) bool {
@@ -40,5 +40,5 @@ func (mgr *NetMgr) FindGateStub(remoteIP string, remotePort int) bool {
 	if rpcmgr == nil {
 		return false
 	}
-	return rpcmgr.FindStub(consts.ServerTypeGate, remoteIP, remotePort) != nil
+	return rpcmgr.FindStub(common.ServerTypeGate, remoteIP, remotePort) != nil
 }

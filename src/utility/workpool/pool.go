@@ -1,8 +1,14 @@
 package workpool
 
+import "sync/atomic"
+
+type TaskFunc func()
+
 type Pool struct {
-	size       int
-	workQueues []*WorkerQueue
+	size    int
+	workers []*Worker
+
+	i atomic.Int64
 }
 
 func NewPool(size int) *Pool {
@@ -14,7 +20,7 @@ func NewPool(size int) *Pool {
 	}
 
 	for i := 0; i < size; i++ {
-		pool.workQueues = append(pool.workQueues, newWorkQueue())
+		pool.workers = append(pool.workers, newWorker())
 	}
 	return pool
 }
@@ -26,34 +32,40 @@ func (pool *Pool) Submit(task func(), ops ...Option) {
 
 	option := LoadOptions(ops...)
 
-	worker := newWorker(task)
-
-	var allocQueue *WorkerQueue = nil
+	var allocWorker *Worker = nil
 	if option.workerHashKey != nil {
-		allocQueue = pool.hashQueue(*option.workerHashKey)
+		allocWorker = pool.hashQueue(*option.workerHashKey)
 	} else {
-		allocQueue = pool.minLoadQueue()
+		i := pool.i.Add(1)
+		//allocWorker = pool.minLoadQueue()
+		allocWorker = pool.workers[i%int64(pool.size)]
 	}
 
-	allocQueue.insert(worker)
+	allocWorker.push(task)
 }
 
 // 最小负载分配
-func (pool *Pool) minLoadQueue() *WorkerQueue {
+func (pool *Pool) minLoadQueue() *Worker {
 	index := 0
 	minLoad := int64(-1)
-	for i, workQueue := range pool.workQueues {
+	for i, workQueue := range pool.workers {
 		size := workQueue.length()
+		//已经没有任务在执行，直接返回
+		if size == 0 {
+			index = i
+			break
+		}
+
 		if minLoad < 0 || size < minLoad {
 			minLoad = size
 			index = i
 		}
 	}
-	return pool.workQueues[index]
+	return pool.workers[index]
 }
 
 // hash分配
-func (pool *Pool) hashQueue(key uint64) *WorkerQueue {
+func (pool *Pool) hashQueue(key uint64) *Worker {
 	index := key % uint64(pool.size)
-	return pool.workQueues[index]
+	return pool.workers[index]
 }

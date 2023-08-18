@@ -61,8 +61,8 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 	mgr.netcore = network.NewNetworkCore(
 		network.WithEventHandlers(handlers),
 		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
-		network.WithSocketSendBufferSize(32*1024),
-		network.WithSocketRcvBufferSize(32*1024),
+		network.WithSocketSendBufferSize(1024),
+		network.WithSocketRcvBufferSize(1024),
 		network.WithSocketTcpNoDelay(true),
 		network.WithFrameCodecs(codecs))
 	mgr.netcore.Start()
@@ -161,8 +161,11 @@ func (mgr *RpcManager) FindStub(serverType int, remoteIP string, remotePort int)
 
 // 添加一个rpc到管理器
 func (mgr *RpcManager) AddRpc(rpc *RpcEntry) bool {
+	// 需要先store，否则可能response已经收到，根据callId获取rpc失败
+	mgr.rpcMap.Store(rpc.CallId, rpc)
 	if !mgr.rpcStubMgr.addRpc(rpc) {
 		log.Error("add rpc failed, target server type: %v, callId: %v", rpc.TargetSvrType, rpc.CallId)
+		mgr.rpcMap.Delete(rpc.CallId)
 		return false
 	}
 
@@ -170,8 +173,6 @@ func (mgr *RpcManager) AddRpc(rpc *RpcEntry) bool {
 	if rpc.IsOneway {
 		return true
 	}
-
-	mgr.rpcMap.Store(rpc.CallId, rpc)
 
 	return true
 }
@@ -194,12 +195,15 @@ func (mgr *RpcManager) GetRpc(callId int64) *RpcEntry {
 func (mgr *RpcManager) OnRcvResponse(callId int64, respMsg proto.Message) {
 	rpc := mgr.GetRpc(callId)
 	if rpc == nil {
+		log.Info("rpc not found, callId: %v", callId)
 		return
 	}
 
 	select {
-	case rpc.RespChan <- respMsg:
+	case rpc.NotifyChan <- struct{}{}:
+		//log.Debug("push msg to resp channel ok, callId = %v", callId)
+		break
 	default:
-		log.Error("push msg to resp channel error")
+		log.Error("push msg to resp channel error,len=%v, callId = %v", len(rpc.NotifyChan), callId)
 	}
 }

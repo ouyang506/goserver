@@ -47,7 +47,7 @@ func (cl *CommonLogger) loopSink() {
 }
 
 func (cl *CommonLogger) levelLog(lvl LogLevel, fmtStr string, args ...interface{}) {
-	if cl.logLvl > LogLevelDebug {
+	if cl.logLvl > lvl {
 		return
 	}
 

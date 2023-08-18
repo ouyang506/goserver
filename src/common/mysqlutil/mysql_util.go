@@ -1,10 +1,10 @@
-package common
+package mysqlutil
 
 import (
+	"common/rpcutil"
 	"encoding/json"
 	"framework/log"
 	"framework/proto/pb/ss"
-	"framework/rpc"
 	"strconv"
 )
 
@@ -55,7 +55,7 @@ func QuerySQL(sql string, params ...any) (result *MysqlQueryResult, err error) {
 	*req.Params = string(jsonBytes)
 	resp := &ss.RespExecuteSql{}
 
-	err = rpc.CallMysqlProxy(req, resp)
+	err = rpcutil.CallMysqlProxy(req, resp)
 	if err != nil {
 		log.Error("query sql error : %v, sql : %v, params: %v", err, sql, params)
 		return
