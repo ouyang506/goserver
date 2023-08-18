@@ -3,7 +3,7 @@ package network
 import (
 	"errors"
 	"fmt"
-	"framwork/log"
+	"framework/log"
 	"net"
 	"runtime"
 	"sync"
@@ -632,7 +632,7 @@ func (poll *Poll) loopAccept(fd int) error {
 		if err != nil {
 			return err
 		}
-		for _, h := range allocPoll.eventHandler {
+		for _, h := range allocPoll.eventHandlers {
 			h.OnAccept(conn)
 		}
 		return err
