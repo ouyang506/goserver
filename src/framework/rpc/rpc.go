@@ -153,15 +153,17 @@ func Notify(targetSvrType int, guid int64, req proto.Message, options ...Option)
 
 	rpc := createRpc(RpcModeInner, targetSvrType, guid, req, nil, options...)
 	rpc.IsOneway = true
-	rpc.Timeout = 0
 
+	addRpcTimeout := rpc.Timeout
+	tryAddRpcCount := 5
 	addResult := false
-	for i := 0; i < 3; i++ {
+	for i := 0; i < tryAddRpcCount; i++ {
 		addResult = rpcMgr.AddRpc(rpc)
 		if addResult {
 			break
 		}
-		time.Sleep(1 * time.Second)
+		delta := time.Duration(int64(addRpcTimeout) / int64(tryAddRpcCount-1))
+		time.Sleep(delta)
 	}
 
 	if !addResult {
@@ -195,14 +197,18 @@ func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 
 	// 1.由于服务启动时序问题，可能暂未拉取到注册中心的服务，导致没有分配到代理管道
 	// 2.发送缓冲区已满
-	// TODO: 需要扣除一下等待时间
+	timeout := rpc.Timeout
+	addRpcTimeout := timeout / 2
+	tryAddRpcCount := 5
 	addResult := false
-	for i := 0; i < 3; i++ {
+	for i := 0; i < tryAddRpcCount; i++ {
 		addResult = rpcMgr.AddRpc(rpc)
 		if addResult {
 			break
 		}
-		time.Sleep(1 * time.Second)
+		delta := time.Duration(int64(addRpcTimeout) / int64(tryAddRpcCount-1))
+		time.Sleep(delta)
+		timeout -= delta
 	}
 
 	if !addResult {
@@ -213,7 +219,7 @@ func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 
 	// wait for rpc response util timeout
 	bTimeout := false
-	timer := time.NewTimer(rpc.Timeout)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case <-rpc.NotifyChan:

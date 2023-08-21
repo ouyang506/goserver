@@ -61,8 +61,8 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 	mgr.netcore = network.NewNetworkCore(
 		network.WithEventHandler(handler),
 		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
-		network.WithSocketSendBufferSize(1024),
-		network.WithSocketRcvBufferSize(1024),
+		network.WithSocketSendBufferSize(32*1024),
+		network.WithSocketRcvBufferSize(32*1024),
 		network.WithSocketTcpNoDelay(true),
 		network.WithFrameCodecs(codecs))
 	mgr.netcore.Start()

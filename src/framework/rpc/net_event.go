@@ -67,8 +67,8 @@ func NewInnerNetEventHandler() *InnerNetEventHandler {
 func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 	rcvInnerMsg := msg.(*InnerMessage)
 	msgId := rcvInnerMsg.MsgID
-	log.Debug("NetEvent OnRcvMsg, sessionId: %d, callId : %v, msgId: %d",
-		c.GetSessionId(), rcvInnerMsg.CallId, msgId)
+	// log.Debug("NetEvent OnRcvMsg, sessionId: %d, callId : %v, msgId: %d",
+	// 	c.GetSessionId(), rcvInnerMsg.CallId, msgId)
 
 	switch {
 	case msgId < 0:

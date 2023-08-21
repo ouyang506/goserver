@@ -1,12 +1,9 @@
 package app
 
 import (
-	"common"
 	"common/mysqlutil"
 	"fmt"
 	"framework/log"
-	"framework/proto/pb/ss"
-	"framework/rpc"
 	"mysqlproxy/config"
 	"mysqlproxy/dbmgr"
 	"mysqlproxy/netmgr"
@@ -41,6 +38,7 @@ func (app *App) init() bool {
 
 	//init logger
 	logger := log.NewCommonLogger()
+	logger.SetLogLevel(log.LogLevelDebug)
 	logger.AddSink(log.NewStdLogSink())
 	logger.AddSink(log.NewFileLogSink("mysqlproxy", "../../../logs/", log.RotateByHour))
 	logger.Start()
@@ -63,7 +61,7 @@ func (app *App) Start() {
 
 	for {
 		app.update()
-		time.Sleep(time.Millisecond * 20 * 10000)
+		time.Sleep(time.Millisecond * 50)
 	}
 }
 
@@ -72,15 +70,4 @@ func (app *App) update() {
 	log.Debug("begin execute sql")
 	result, err := mysqlutil.QuerySQL("select * from account where username = ?", "admin")
 	log.Debug("end execute sql, result: %+v, err: %v", result, err)
-	// if err != nil {
-	// 	for _, row := range result.Rows {
-	// 		for _, field := range row {
-	// 			log.Debug("%v", field.String())
-	// 		}
-	// 	}
-	// }
-	notify := &ss.NotifyExecuteSql{}
-	notify.Value = new(string)
-	*notify.Value = "test_notify"
-	rpc.Notify(common.ServerTypeMysqlProxy, 0, notify)
 }
