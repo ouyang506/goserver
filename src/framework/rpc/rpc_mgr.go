@@ -29,37 +29,37 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 	ops := LoadOptions(options...)
 
 	codecs := []network.Codec{}
-	handlers := []network.NetEventHandler{}
+	var handler network.NetEventHandler
 
 	switch mode {
 	case RpcModeOuter:
 		codecs = append(codecs, NewOuterMessageCodec(mgr))
 		codecs = append(codecs, network.NewVariableFrameLenCodec())
 		if ops.NetEventHandler != nil {
-			handlers = append(handlers, ops.NetEventHandler)
+			handler = ops.NetEventHandler
 			ops.NetEventHandler.SetOwner(mgr)
 		} else {
 			outerEventHandler := NewOuterNetEventHandler()
 			outerEventHandler.SetOwner(mgr)
-			handlers = append(handlers, outerEventHandler)
+			handler = handler
 		}
 	case RpcModeInner:
 		codecs = append(codecs, NewInnerMessageCodec(mgr))
 		codecs = append(codecs, network.NewVariableFrameLenCodec())
 
 		if ops.NetEventHandler != nil {
-			handlers = append(handlers, ops.NetEventHandler)
+			handler = ops.NetEventHandler
 			ops.NetEventHandler.SetOwner(mgr)
 		} else {
 			outerEventHandler := NewInnerNetEventHandler()
 			outerEventHandler.SetOwner(mgr)
-			handlers = append(handlers, outerEventHandler)
+			handler = outerEventHandler
 		}
 	}
 
 	// 初始化网络
 	mgr.netcore = network.NewNetworkCore(
-		network.WithEventHandlers(handlers),
+		network.WithEventHandler(handler),
 		network.WithLoadBalance(network.NewLoadBalanceRoundRobin(0)),
 		network.WithSocketSendBufferSize(1024),
 		network.WithSocketRcvBufferSize(1024),

@@ -47,7 +47,7 @@ type NetPollCore struct {
 	waitConnMap   sync.Map // sessionId->connection
 	waitConnTimer time.Ticker
 
-	eventHandlers []NetEventHandler
+	eventHandler NetEventHandler
 }
 
 func newNetworkCore(opts ...Option) *NetPollCore {
@@ -59,7 +59,7 @@ func newNetworkCore(opts ...Option) *NetPollCore {
 	netcore := &NetPollCore{}
 	netcore.numLoops = options.numLoops
 	netcore.loadBalance = options.loadBalance
-	netcore.eventHandlers = options.eventHandlers
+	netcore.eventHandler = options.eventHandler
 	netcore.socketSendBufferSize = options.socketSendBufferSize
 	netcore.socketRcvBufferSize = options.socketRcvBufferSize
 	netcore.socketTcpNoDelay = options.socketTcpNoDelay
@@ -95,7 +95,7 @@ func (netcore *NetPollCore) startLoop() error {
 		poll := NewNetPoll()
 		poll.pollIndex = i
 		poll.netcore = netcore
-		poll.eventHandlers = netcore.eventHandlers
+		poll.eventHandler = netcore.eventHandler
 		poll.pollFd = pollFd
 
 		poll.wakeFd, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
@@ -280,7 +280,7 @@ type Poll struct {
 	pollIndex      int
 	netcore        *NetPollCore
 	logger         log.Logger
-	eventHandlers  []NetEventHandler
+	eventHandler   NetEventHandler
 	pollFd         int
 	wakeFd         int
 	wfdBuf         []byte
@@ -441,8 +441,8 @@ func (poll *Poll) tcpConnect(conn *NetConn) error {
 	conn.state = int32(ConnStateConnected)
 	poll.addConnection(conn)
 	poll.addReadWrite(fd)
-	for _, h := range poll.eventHandlers {
-		h.OnConnect(conn, nil)
+	if poll.eventHandler != nil {
+		poll.eventHandler.OnConnect(conn, nil)
 	}
 	poll.netcore.removeWaitConn(conn.sessionId)
 
@@ -632,8 +632,8 @@ func (poll *Poll) loopAccept(fd int) error {
 		if err != nil {
 			return err
 		}
-		for _, h := range allocPoll.eventHandlers {
-			h.OnAccept(conn)
+		if allocPoll.eventHandler != nil {
+			allocPoll.eventHandler.OnAccept(conn)
 		}
 		return err
 	}
@@ -709,8 +709,8 @@ func (poll *Poll) loopRead(fd int) error {
 				msg := in
 				if msg != nil {
 					//log.Debug("session:%v rcv msg : %v", c.sessionId, msg)
-					for _, h := range poll.netcore.eventHandlers {
-						h.OnRcvMsg(c, msg)
+					if poll.netcore.eventHandler != nil {
+						poll.netcore.eventHandler.OnRcvMsg(c, msg)
 					}
 				} else {
 					break
@@ -753,8 +753,8 @@ func (poll *Poll) loopWrite(fd int) error {
 
 		conn.state = int32(ConnStateConnected)
 		poll.netcore.removeWaitConn(conn.sessionId)
-		for _, h := range poll.eventHandlers {
-			h.OnConnect(conn, nil)
+		if poll.eventHandler != nil {
+			poll.eventHandler.OnConnect(conn, nil)
 		}
 	}
 
@@ -808,8 +808,8 @@ func (poll *Poll) loopError(fd int) {
 	if conn != nil && conn.state == int32(ConnStateConnecting) {
 		log.Error("connect to peer server failed, peerHost:%v, peerPort:%v, sessionId:%v, fd:%v",
 			conn.peerHost, conn.peerPort, conn.sessionId, conn.fd)
-		for _, h := range poll.eventHandlers {
-			h.OnConnect(conn, errors.New("epoll connect to peer server failed"))
+		if poll.eventHandler != nil {
+			poll.eventHandler.OnConnect(conn, errors.New("epoll connect to peer server failed"))
 		}
 	}
 
@@ -837,8 +837,8 @@ func (poll *Poll) close(fd int) {
 	poll.removeConnectionByFd(fd)
 
 	if isConnected {
-		for _, h := range poll.eventHandlers {
-			h.OnClosed(conn)
+		if poll.eventHandler != nil {
+			poll.eventHandler.OnClosed(conn)
 		}
 	}
 

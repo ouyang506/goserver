@@ -5,7 +5,7 @@ type Option func(ops *Options)
 type Options struct {
 	numLoops             int // only for linux
 	loadBalance          LoadBalance
-	eventHandlers        []NetEventHandler
+	eventHandler         NetEventHandler
 	socketSendBufferSize int
 	socketRcvBufferSize  int
 	socketTcpNoDelay     bool
@@ -41,9 +41,9 @@ func WithLoadBalance(loadBalance LoadBalance) Option {
 	}
 }
 
-func WithEventHandlers(eventHandlers []NetEventHandler) Option {
+func WithEventHandler(eventHandler NetEventHandler) Option {
 	return func(ops *Options) {
-		ops.eventHandlers = eventHandlers
+		ops.eventHandler = eventHandler
 	}
 }
 
