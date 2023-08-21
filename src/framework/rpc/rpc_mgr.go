@@ -83,16 +83,55 @@ func (mgr *RpcManager) initMsgHandler(handler any) {
 	refValue := reflect.ValueOf(handler)
 	methodCount := refType.NumMethod()
 	for i := 0; i < methodCount; i++ {
-		methodName := refType.Method(i).Name
+		method := refType.Method(i)
+		methodName := method.Name
 		if !strings.HasPrefix(methodName, RpcHandlerMethodPrefix) {
 			continue
 		}
+
 		reqMsgName := methodName[len(RpcHandlerMethodPrefix):]
 		reqMsgId := pb.GetMsgIdByName(reqMsgName)
 		if reqMsgId == 0 {
 			log.Warn("cannot find the message id by handle method, methodName = %v", methodName)
 			continue
 		}
+
+		methodType := method.Type
+		// 没有返回参数
+		numOut := methodType.NumOut()
+		if numOut != 0 {
+			continue
+		}
+
+		//第一个参数为结构体self
+		//参数个数为2表示rpc notify，为3表示有返回的rpc
+		numIn := methodType.NumIn()
+		if numIn != 2 && numIn != 3 {
+			continue
+		}
+
+		reqMsg, respMsg := pb.GetProtoMsgById(reqMsgId)
+		if (respMsg == nil && numIn != 2) || (respMsg != nil && numIn != 3) {
+			log.Warn("method %v param count error", methodName)
+			continue
+		}
+
+		if numIn == 2 {
+			if methodType.In(1) != reflect.TypeOf(reqMsg) {
+				log.Warn("method %v param type error", methodName)
+				continue
+			}
+		} else if numIn == 3 {
+			if methodType.In(1) != reflect.TypeOf(reqMsg) {
+				log.Warn("method %v param type error", methodName)
+				continue
+			}
+			if methodType.In(2) != reflect.TypeOf(respMsg) {
+				log.Warn("method %v param type error", methodName)
+				continue
+			}
+		}
+
 		methodMap[reqMsgId] = refValue.Method(i)
 	}
 	mgr.msgHandleMap = methodMap
