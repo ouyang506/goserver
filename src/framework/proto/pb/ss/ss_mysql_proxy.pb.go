@@ -24,19 +24,16 @@ const (
 type SsMysqlProxy int32
 
 const (
-	SsMysqlProxy_msg_id_req_execute_sql    SsMysqlProxy = 10001
-	SsMysqlProxy_msg_id_notify_execute_sql SsMysqlProxy = 10002
+	SsMysqlProxy_msg_id_req_execute_sql SsMysqlProxy = 10001
 )
 
 // Enum value maps for SsMysqlProxy.
 var (
 	SsMysqlProxy_name = map[int32]string{
 		10001: "msg_id_req_execute_sql",
-		10002: "msg_id_notify_execute_sql",
 	}
 	SsMysqlProxy_value = map[string]int32{
-		"msg_id_req_execute_sql":    10001,
-		"msg_id_notify_execute_sql": 10002,
+		"msg_id_req_execute_sql": 10001,
 	}
 )
 
@@ -77,6 +74,66 @@ func (SsMysqlProxy) EnumDescriptor() ([]byte, []int) {
 	return file_ss_mysql_proxy_proto_rawDescGZIP(), []int{0}
 }
 
+//错误码
+type SsMysqlProxyError int32
+
+const (
+	SsMysqlProxyError_invalid_oper_type  SsMysqlProxyError = 1 //非法的操作类型
+	SsMysqlProxyError_invalid_sql_param  SsMysqlProxyError = 2 //sql查询参数错误
+	SsMysqlProxyError_execute_sql_failed SsMysqlProxyError = 3 //执行sql返回错误
+)
+
+// Enum value maps for SsMysqlProxyError.
+var (
+	SsMysqlProxyError_name = map[int32]string{
+		1: "invalid_oper_type",
+		2: "invalid_sql_param",
+		3: "execute_sql_failed",
+	}
+	SsMysqlProxyError_value = map[string]int32{
+		"invalid_oper_type":  1,
+		"invalid_sql_param":  2,
+		"execute_sql_failed": 3,
+	}
+)
+
+func (x SsMysqlProxyError) Enum() *SsMysqlProxyError {
+	p := new(SsMysqlProxyError)
+	*p = x
+	return p
+}
+
+func (x SsMysqlProxyError) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SsMysqlProxyError) Descriptor() protoreflect.EnumDescriptor {
+	return file_ss_mysql_proxy_proto_enumTypes[1].Descriptor()
+}
+
+func (SsMysqlProxyError) Type() protoreflect.EnumType {
+	return &file_ss_mysql_proxy_proto_enumTypes[1]
+}
+
+func (x SsMysqlProxyError) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Do not use.
+func (x *SsMysqlProxyError) UnmarshalJSON(b []byte) error {
+	num, err := protoimpl.X.UnmarshalJSONEnum(x.Descriptor(), b)
+	if err != nil {
+		return err
+	}
+	*x = SsMysqlProxyError(num)
+	return nil
+}
+
+// Deprecated: Use SsMysqlProxyError.Descriptor instead.
+func (SsMysqlProxyError) EnumDescriptor() ([]byte, []int) {
+	return file_ss_mysql_proxy_proto_rawDescGZIP(), []int{1}
+}
+
 // mysql操作类型
 type DbOperType int32
 
@@ -108,11 +165,11 @@ func (x DbOperType) String() string {
 }
 
 func (DbOperType) Descriptor() protoreflect.EnumDescriptor {
-	return file_ss_mysql_proxy_proto_enumTypes[1].Descriptor()
+	return file_ss_mysql_proxy_proto_enumTypes[2].Descriptor()
 }
 
 func (DbOperType) Type() protoreflect.EnumType {
-	return &file_ss_mysql_proxy_proto_enumTypes[1]
+	return &file_ss_mysql_proxy_proto_enumTypes[2]
 }
 
 func (x DbOperType) Number() protoreflect.EnumNumber {
@@ -131,7 +188,7 @@ func (x *DbOperType) UnmarshalJSON(b []byte) error {
 
 // Deprecated: Use DbOperType.Descriptor instead.
 func (DbOperType) EnumDescriptor() ([]byte, []int) {
-	return file_ss_mysql_proxy_proto_rawDescGZIP(), []int{1}
+	return file_ss_mysql_proxy_proto_rawDescGZIP(), []int{2}
 }
 
 //mysql数据库操作请求
@@ -380,53 +437,6 @@ func (x *MysqlQueryResult) GetRows() []*MysqlResultRow {
 	return nil
 }
 
-type NotifyExecuteSql struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Value *string `protobuf:"bytes,1,opt,name=value" json:"value,omitempty"`
-}
-
-func (x *NotifyExecuteSql) Reset() {
-	*x = NotifyExecuteSql{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_ss_mysql_proxy_proto_msgTypes[4]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *NotifyExecuteSql) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*NotifyExecuteSql) ProtoMessage() {}
-
-func (x *NotifyExecuteSql) ProtoReflect() protoreflect.Message {
-	mi := &file_ss_mysql_proxy_proto_msgTypes[4]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use NotifyExecuteSql.ProtoReflect.Descriptor instead.
-func (*NotifyExecuteSql) Descriptor() ([]byte, []int) {
-	return file_ss_mysql_proxy_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *NotifyExecuteSql) GetValue() string {
-	if x != nil && x.Value != nil {
-		return *x.Value
-	}
-	return ""
-}
-
 var File_ss_mysql_proxy_proto protoreflect.FileDescriptor
 
 var file_ss_mysql_proxy_proto_rawDesc = []byte{
@@ -459,18 +469,19 @@ var file_ss_mysql_proxy_proto_rawDesc = []byte{
 	0x03, 0x28, 0x09, 0x52, 0x07, 0x63, 0x6f, 0x6c, 0x75, 0x6d, 0x6e, 0x73, 0x12, 0x28, 0x0a, 0x04,
 	0x72, 0x6f, 0x77, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x73, 0x73, 0x2e,
 	0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x5f, 0x72, 0x6f, 0x77,
-	0x52, 0x04, 0x72, 0x6f, 0x77, 0x73, 0x22, 0x2a, 0x0a, 0x12, 0x6e, 0x6f, 0x74, 0x69, 0x66, 0x79,
-	0x5f, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x73, 0x71, 0x6c, 0x12, 0x14, 0x0a, 0x05,
-	0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c,
-	0x75, 0x65, 0x2a, 0x4d, 0x0a, 0x0e, 0x73, 0x73, 0x5f, 0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x70,
-	0x72, 0x6f, 0x78, 0x79, 0x12, 0x1b, 0x0a, 0x16, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x72,
-	0x65, 0x71, 0x5f, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x73, 0x71, 0x6c, 0x10, 0x91,
-	0x4e, 0x12, 0x1e, 0x0a, 0x19, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x6e, 0x6f, 0x74, 0x69,
-	0x66, 0x79, 0x5f, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x73, 0x71, 0x6c, 0x10, 0x92,
-	0x4e, 0x2a, 0x30, 0x0a, 0x0c, 0x64, 0x62, 0x5f, 0x6f, 0x70, 0x65, 0x72, 0x5f, 0x74, 0x79, 0x70,
-	0x65, 0x12, 0x0e, 0x0a, 0x0a, 0x6f, 0x70, 0x65, 0x72, 0x5f, 0x71, 0x75, 0x65, 0x72, 0x79, 0x10,
-	0x01, 0x12, 0x10, 0x0a, 0x0c, 0x6f, 0x70, 0x65, 0x72, 0x5f, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74,
-	0x65, 0x10, 0x02,
+	0x52, 0x04, 0x72, 0x6f, 0x77, 0x73, 0x2a, 0x2d, 0x0a, 0x0e, 0x73, 0x73, 0x5f, 0x6d, 0x79, 0x73,
+	0x71, 0x6c, 0x5f, 0x70, 0x72, 0x6f, 0x78, 0x79, 0x12, 0x1b, 0x0a, 0x16, 0x6d, 0x73, 0x67, 0x5f,
+	0x69, 0x64, 0x5f, 0x72, 0x65, 0x71, 0x5f, 0x65, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x73,
+	0x71, 0x6c, 0x10, 0x91, 0x4e, 0x2a, 0x5c, 0x0a, 0x14, 0x73, 0x73, 0x5f, 0x6d, 0x79, 0x73, 0x71,
+	0x6c, 0x5f, 0x70, 0x72, 0x6f, 0x78, 0x79, 0x5f, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x12, 0x15, 0x0a,
+	0x11, 0x69, 0x6e, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x5f, 0x6f, 0x70, 0x65, 0x72, 0x5f, 0x74, 0x79,
+	0x70, 0x65, 0x10, 0x01, 0x12, 0x15, 0x0a, 0x11, 0x69, 0x6e, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x5f,
+	0x73, 0x71, 0x6c, 0x5f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x10, 0x02, 0x12, 0x16, 0x0a, 0x12, 0x65,
+	0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x5f, 0x73, 0x71, 0x6c, 0x5f, 0x66, 0x61, 0x69, 0x6c, 0x65,
+	0x64, 0x10, 0x03, 0x2a, 0x30, 0x0a, 0x0c, 0x64, 0x62, 0x5f, 0x6f, 0x70, 0x65, 0x72, 0x5f, 0x74,
+	0x79, 0x70, 0x65, 0x12, 0x0e, 0x0a, 0x0a, 0x6f, 0x70, 0x65, 0x72, 0x5f, 0x71, 0x75, 0x65, 0x72,
+	0x79, 0x10, 0x01, 0x12, 0x10, 0x0a, 0x0c, 0x6f, 0x70, 0x65, 0x72, 0x5f, 0x65, 0x78, 0x65, 0x63,
+	0x75, 0x74, 0x65, 0x10, 0x02,
 }
 
 var (
@@ -485,21 +496,21 @@ func file_ss_mysql_proxy_proto_rawDescGZIP() []byte {
 	return file_ss_mysql_proxy_proto_rawDescData
 }
 
-var file_ss_mysql_proxy_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ss_mysql_proxy_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_ss_mysql_proxy_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_ss_mysql_proxy_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_ss_mysql_proxy_proto_goTypes = []interface{}{
 	(SsMysqlProxy)(0),        // 0: ss.ss_mysql_proxy
-	(DbOperType)(0),          // 1: ss.db_oper_type
-	(*ReqExecuteSql)(nil),    // 2: ss.req_execute_sql
-	(*RespExecuteSql)(nil),   // 3: ss.resp_execute_sql
-	(*MysqlResultRow)(nil),   // 4: ss.mysql_result_row
-	(*MysqlQueryResult)(nil), // 5: ss.mysql_query_result
-	(*NotifyExecuteSql)(nil), // 6: ss.notify_execute_sql
+	(SsMysqlProxyError)(0),   // 1: ss.ss_mysql_proxy_error
+	(DbOperType)(0),          // 2: ss.db_oper_type
+	(*ReqExecuteSql)(nil),    // 3: ss.req_execute_sql
+	(*RespExecuteSql)(nil),   // 4: ss.resp_execute_sql
+	(*MysqlResultRow)(nil),   // 5: ss.mysql_result_row
+	(*MysqlQueryResult)(nil), // 6: ss.mysql_query_result
 }
 var file_ss_mysql_proxy_proto_depIdxs = []int32{
-	1, // 0: ss.req_execute_sql.type:type_name -> ss.db_oper_type
-	5, // 1: ss.resp_execute_sql.query_result:type_name -> ss.mysql_query_result
-	4, // 2: ss.mysql_query_result.rows:type_name -> ss.mysql_result_row
+	2, // 0: ss.req_execute_sql.type:type_name -> ss.db_oper_type
+	6, // 1: ss.resp_execute_sql.query_result:type_name -> ss.mysql_query_result
+	5, // 2: ss.mysql_query_result.rows:type_name -> ss.mysql_result_row
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -561,26 +572,14 @@ func file_ss_mysql_proxy_proto_init() {
 				return nil
 			}
 		}
-		file_ss_mysql_proxy_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NotifyExecuteSql); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_ss_mysql_proxy_proto_rawDesc,
-			NumEnums:      2,
-			NumMessages:   5,
+			NumEnums:      3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

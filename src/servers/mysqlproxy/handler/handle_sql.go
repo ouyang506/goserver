@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"framework/log"
 	"framework/proto/pb/ss"
 	"mysqlproxy/dbmgr"
@@ -23,6 +24,10 @@ func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.
 	err := json.Unmarshal([]byte(paramJson), &params)
 	if err != nil {
 		log.Error("unmarshal params error: %v, param string: %v", err, paramJson)
+		resp.ErrCode = new(int32)
+		*resp.ErrCode = int32(ss.SsMysqlProxyError_invalid_sql_param)
+		resp.ErrDesc = new(string)
+		*resp.ErrDesc = fmt.Sprintf("unmarshal params error, %v", err)
 		return
 	}
 
@@ -31,6 +36,10 @@ func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.
 		columns, result, err := mysqlMgr.QuerySql(sql, params...)
 		if err != nil {
 			log.Error("query sql error, %v", err)
+			resp.ErrCode = new(int32)
+			*resp.ErrCode = int32(ss.SsMysqlProxyError_execute_sql_failed)
+			resp.ErrDesc = new(string)
+			*resp.ErrDesc = err.Error()
 			return
 		}
 		resp.QueryResult = &ss.MysqlQueryResult{}
@@ -46,16 +55,18 @@ func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.
 		lastInsertId, rowsAffected, err := mysqlMgr.ExecuteSql(sql, params...)
 		if err != nil {
 			log.Error("execute sql error, %v", err)
+			resp.ErrCode = new(int32)
+			*resp.ErrCode = int32(ss.SsMysqlProxyError_execute_sql_failed)
+			resp.ErrDesc = new(string)
+			*resp.ErrDesc = err.Error()
 			return
 		}
 		resp.LastInsertId = &lastInsertId
 		resp.AffectedCount = &rowsAffected
 	default:
-
+		resp.ErrCode = new(int32)
+		*resp.ErrCode = int32(ss.SsMysqlProxyError_invalid_oper_type)
+		resp.ErrDesc = new(string)
+		*resp.ErrDesc = "invalid operation type"
 	}
-}
-
-func (h *MessageHandler) HandleRpcNotifyExecuteSql(notify *ss.NotifyExecuteSql) {
-	reqJson, _ := json.Marshal(notify)
-	log.Debug("rcv NotifyExecuteSql : %s", string(reqJson))
 }

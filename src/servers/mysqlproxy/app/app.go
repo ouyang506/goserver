@@ -67,7 +67,21 @@ func (app *App) Start() {
 
 // main loop
 func (app *App) update() {
+	// insertId, _, err := mysqlutil.Execute("insert into account(username, passwd) values(?, ?)", "admin_1", "123456")
+	// if err != nil {
+	// 	return
+	// }
+	// log.Debug("insert id = %d", insertId)
+
 	log.Debug("begin execute sql")
-	result, err := mysqlutil.QuerySQL("select * from account where username = ?", "admin")
+	result, err := mysqlutil.Query("select * from account where username = ?", "admin")
 	log.Debug("end execute sql, result: %+v, err: %v", result, err)
+	if err != nil {
+		return
+	}
+	rows := result.Rows()
+	for i, row := range rows {
+		log.Debug("row_%v : username = %v, passwd = %v", i,
+			row.FieldString("username"), row.FieldString("passwd"))
+	}
 }

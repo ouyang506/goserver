@@ -8,7 +8,6 @@ enum cs_gate{
 
   //[1011-1100]定义业务协议
 	msg_id_req_login_gate  = 1011;
-	msg_id_notify_tooltip	 = 1012;
 }
 
 // 心跳请求协议
@@ -27,12 +26,4 @@ message req_login_gate{
 //登录gateway返回
 message resp_login_gate{
   optional int32 result = 1;
-}
-
-message notify_tooltip{
-  optional string content = 1;
-}
-
-message test_entry{
-  
 }

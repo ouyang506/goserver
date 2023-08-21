@@ -10,11 +10,9 @@ var CSRpcMsg [][]any = [][]any{
 	//cs_gate
 	{int(cs.CsGate_msg_id_req_heart_beat), &cs.ReqHeartBeat{}, &cs.RespHeartBeat{}},
 	{int(cs.CsGate_msg_id_req_login_gate), &cs.ReqLoginGate{}, &cs.RespLoginGate{}},
-	{int(cs.CsGate_msg_id_notify_tooltip), &cs.NotifyTooltip{}},
 }
 
 var SSRpcMsg [][]any = [][]any{
 	//ss_mysql_proxy
 	{int(ss.SsMysqlProxy_msg_id_req_execute_sql), &ss.ReqExecuteSql{}, &ss.RespExecuteSql{}},
-	{int(ss.SsMysqlProxy_msg_id_notify_execute_sql), &ss.NotifyExecuteSql{}},
 }

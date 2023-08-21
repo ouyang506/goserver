@@ -1,5 +1,2 @@
 syntax = "proto2";
 package ss;
-
-message ss_msg_head{
-}

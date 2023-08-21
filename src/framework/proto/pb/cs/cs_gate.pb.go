@@ -28,7 +28,6 @@ const (
 	CsGate_msg_id_req_heart_beat CsGate = 1001
 	//[1011-1100]定义业务协议
 	CsGate_msg_id_req_login_gate CsGate = 1011
-	CsGate_msg_id_notify_tooltip CsGate = 1012
 )
 
 // Enum value maps for CsGate.
@@ -36,12 +35,10 @@ var (
 	CsGate_name = map[int32]string{
 		1001: "msg_id_req_heart_beat",
 		1011: "msg_id_req_login_gate",
-		1012: "msg_id_notify_tooltip",
 	}
 	CsGate_value = map[string]int32{
 		"msg_id_req_heart_beat": 1001,
 		"msg_id_req_login_gate": 1011,
-		"msg_id_notify_tooltip": 1012,
 	}
 )
 
@@ -256,91 +253,6 @@ func (x *RespLoginGate) GetResult() int32 {
 	return 0
 }
 
-type NotifyTooltip struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Content *string `protobuf:"bytes,1,opt,name=content" json:"content,omitempty"`
-}
-
-func (x *NotifyTooltip) Reset() {
-	*x = NotifyTooltip{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_cs_gate_proto_msgTypes[4]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *NotifyTooltip) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*NotifyTooltip) ProtoMessage() {}
-
-func (x *NotifyTooltip) ProtoReflect() protoreflect.Message {
-	mi := &file_cs_gate_proto_msgTypes[4]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use NotifyTooltip.ProtoReflect.Descriptor instead.
-func (*NotifyTooltip) Descriptor() ([]byte, []int) {
-	return file_cs_gate_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *NotifyTooltip) GetContent() string {
-	if x != nil && x.Content != nil {
-		return *x.Content
-	}
-	return ""
-}
-
-type TestEntry struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-}
-
-func (x *TestEntry) Reset() {
-	*x = TestEntry{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_cs_gate_proto_msgTypes[5]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *TestEntry) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TestEntry) ProtoMessage() {}
-
-func (x *TestEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_cs_gate_proto_msgTypes[5]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TestEntry.ProtoReflect.Descriptor instead.
-func (*TestEntry) Descriptor() ([]byte, []int) {
-	return file_cs_gate_proto_rawDescGZIP(), []int{5}
-}
-
 var File_cs_gate_proto protoreflect.FileDescriptor
 
 var file_cs_gate_proto_rawDesc = []byte{
@@ -352,17 +264,11 @@ var file_cs_gate_proto_rawDesc = []byte{
 	0x6b, 0x65, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x74, 0x6f, 0x6b, 0x65, 0x6e,
 	0x22, 0x29, 0x0a, 0x0f, 0x72, 0x65, 0x73, 0x70, 0x5f, 0x6c, 0x6f, 0x67, 0x69, 0x6e, 0x5f, 0x67,
 	0x61, 0x74, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x18, 0x01, 0x20,
-	0x01, 0x28, 0x05, 0x52, 0x06, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x22, 0x2a, 0x0a, 0x0e, 0x6e,
-	0x6f, 0x74, 0x69, 0x66, 0x79, 0x5f, 0x74, 0x6f, 0x6f, 0x6c, 0x74, 0x69, 0x70, 0x12, 0x18, 0x0a,
-	0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07,
-	0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x22, 0x0c, 0x0a, 0x0a, 0x74, 0x65, 0x73, 0x74, 0x5f,
-	0x65, 0x6e, 0x74, 0x72, 0x79, 0x2a, 0x5d, 0x0a, 0x07, 0x63, 0x73, 0x5f, 0x67, 0x61, 0x74, 0x65,
-	0x12, 0x1a, 0x0a, 0x15, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x72, 0x65, 0x71, 0x5f, 0x68,
-	0x65, 0x61, 0x72, 0x74, 0x5f, 0x62, 0x65, 0x61, 0x74, 0x10, 0xe9, 0x07, 0x12, 0x1a, 0x0a, 0x15,
-	0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x72, 0x65, 0x71, 0x5f, 0x6c, 0x6f, 0x67, 0x69, 0x6e,
-	0x5f, 0x67, 0x61, 0x74, 0x65, 0x10, 0xf3, 0x07, 0x12, 0x1a, 0x0a, 0x15, 0x6d, 0x73, 0x67, 0x5f,
-	0x69, 0x64, 0x5f, 0x6e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x5f, 0x74, 0x6f, 0x6f, 0x6c, 0x74, 0x69,
-	0x70, 0x10, 0xf4, 0x07,
+	0x01, 0x28, 0x05, 0x52, 0x06, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x2a, 0x41, 0x0a, 0x07, 0x63,
+	0x73, 0x5f, 0x67, 0x61, 0x74, 0x65, 0x12, 0x1a, 0x0a, 0x15, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64,
+	0x5f, 0x72, 0x65, 0x71, 0x5f, 0x68, 0x65, 0x61, 0x72, 0x74, 0x5f, 0x62, 0x65, 0x61, 0x74, 0x10,
+	0xe9, 0x07, 0x12, 0x1a, 0x0a, 0x15, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x72, 0x65, 0x71,
+	0x5f, 0x6c, 0x6f, 0x67, 0x69, 0x6e, 0x5f, 0x67, 0x61, 0x74, 0x65, 0x10, 0xf3, 0x07,
 }
 
 var (
@@ -378,15 +284,13 @@ func file_cs_gate_proto_rawDescGZIP() []byte {
 }
 
 var file_cs_gate_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_cs_gate_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_cs_gate_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_cs_gate_proto_goTypes = []interface{}{
 	(CsGate)(0),           // 0: cs.cs_gate
 	(*ReqHeartBeat)(nil),  // 1: cs.req_heart_beat
 	(*RespHeartBeat)(nil), // 2: cs.resp_heart_beat
 	(*ReqLoginGate)(nil),  // 3: cs.req_login_gate
 	(*RespLoginGate)(nil), // 4: cs.resp_login_gate
-	(*NotifyTooltip)(nil), // 5: cs.notify_tooltip
-	(*TestEntry)(nil),     // 6: cs.test_entry
 }
 var file_cs_gate_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -450,30 +354,6 @@ func file_cs_gate_proto_init() {
 				return nil
 			}
 		}
-		file_cs_gate_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NotifyTooltip); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_cs_gate_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TestEntry); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -481,7 +361,7 @@ func file_cs_gate_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_cs_gate_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

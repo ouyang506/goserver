@@ -4,7 +4,13 @@ package ss;
 //消息ID定义[范围10001-10100]
 enum ss_mysql_proxy{
   msg_id_req_execute_sql  = 10001;
-  msg_id_notify_execute_sql  = 10002;
+}
+
+//错误码
+enum ss_mysql_proxy_error{
+  invalid_oper_type   = 1; // 非法的操作类型
+  invalid_sql_param   = 2; // sql查询参数错误
+  execute_sql_failed  = 3; // 执行sql返回错误
 }
 
 // mysql操作类型
@@ -38,6 +44,3 @@ message mysql_query_result{
   repeated mysql_result_row  rows      = 2; 
 }
 
-message notify_execute_sql{
-  optional string value = 1;
-}

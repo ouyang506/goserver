@@ -4,12 +4,12 @@ set pwd=%cd%
 cd ../../../../tools
 
 set protoc_cs=protoc -I../src/framework/proto/idl/cs --go_out=../src/framework/proto/pb
-%protoc_cs%  --go_opt=Mcs_head.proto=cs/ 	cs_head.proto
+%protoc_cs%  --go_opt=Mcs_common.proto=cs/ 	cs_common.proto
 %protoc_cs%  --go_opt=Mcs_gate.proto=cs/ 	cs_gate.proto
 
 
 set protoc_ss=protoc -I../src/framework/proto/idl/cs -I../src/framework/proto/idl/ss --go_out=../src/framework/proto/pb
-%protoc_ss%  --go_opt=Mss_head.proto=ss/ 	ss_head.proto
+%protoc_ss%  --go_opt=Mss_common.proto=ss/ 	ss_common.proto
 %protoc_ss%  --go_opt=Mss_mysql_proxy.proto=ss/ 	ss_mysql_proxy.proto
 
 cd %pwd%
