@@ -78,9 +78,9 @@ func (SsMysqlProxy) EnumDescriptor() ([]byte, []int) {
 type SsMysqlProxyError int32
 
 const (
-	SsMysqlProxyError_invalid_oper_type  SsMysqlProxyError = 1 //非法的操作类型
-	SsMysqlProxyError_invalid_sql_param  SsMysqlProxyError = 2 //sql查询参数错误
-	SsMysqlProxyError_execute_sql_failed SsMysqlProxyError = 3 //执行sql返回错误
+	SsMysqlProxyError_invalid_oper_type  SsMysqlProxyError = 1 // 非法的操作类型
+	SsMysqlProxyError_invalid_sql_param  SsMysqlProxyError = 2 // sql查询参数错误
+	SsMysqlProxyError_execute_sql_failed SsMysqlProxyError = 3 // 执行sql返回错误
 )
 
 // Enum value maps for SsMysqlProxyError.

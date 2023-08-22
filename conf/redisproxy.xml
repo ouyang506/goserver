@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+    <!-- 服务注册 -->
+	<registry>
+		<etcd>
+			<endpoints>
+				<item>127.0.0.1:2378</item>
+				<item>127.0.0.1:2379</item>
+				<item>127.0.0.1:2380</item>
+			</endpoints>
+			<username></username>
+			<password></password>
+		</etcd>
+	</registry>
+	
+	<!-- 服务监听 -->
+    <listen>
+        <ip>127.0.0.1</ip>
+        <port>5400</port>
+    </listen>
+	
+	<!-- redis配置 -->
+	<redis>
+		<!-- 0-single 1-cluster -->
+		<type>0</type> 
+        <endpoints>
+			<item>127.0.0.1:6379</item>
+		</endpoints>
+        <username></username>
+		<password></password>
+		<pool_max_conn>10</pool_max_conn>
+    </redis>
+</root>

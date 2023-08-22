@@ -11,6 +11,7 @@ set protoc_cs=protoc -I../src/framework/proto/idl/cs --go_out=../src/framework/p
 set protoc_ss=protoc -I../src/framework/proto/idl/cs -I../src/framework/proto/idl/ss --go_out=../src/framework/proto/pb
 %protoc_ss%  --go_opt=Mss_common.proto=ss/ 	ss_common.proto
 %protoc_ss%  --go_opt=Mss_mysql_proxy.proto=ss/ 	ss_mysql_proxy.proto
+%protoc_ss%  --go_opt=Mss_redis_proxy.proto=ss/ 	ss_redis_proxy.proto
 
 cd %pwd%
 

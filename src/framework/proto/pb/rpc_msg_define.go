@@ -15,4 +15,7 @@ var CSRpcMsg [][]any = [][]any{
 var SSRpcMsg [][]any = [][]any{
 	//ss_mysql_proxy
 	{int(ss.SsMysqlProxy_msg_id_req_execute_sql), &ss.ReqExecuteSql{}, &ss.RespExecuteSql{}},
+	//ss_redis_proxy
+	{int(ss.SsRedisProxy_msg_id_req_redis_cmd), &ss.ReqRedisCmd{}, &ss.RespRedisCmd{}},
+	{int(ss.SsRedisProxy_msg_id_req_redis_eval), &ss.ReqRedisEval{}, &ss.RespRedisEval{}},
 }

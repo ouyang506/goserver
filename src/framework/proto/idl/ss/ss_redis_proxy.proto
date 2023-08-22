@@ -1,0 +1,38 @@
+syntax = "proto2";
+package ss;
+
+//消息ID定义[范围10101-10200]
+enum ss_redis_proxy{
+  msg_id_req_redis_cmd  = 10101;
+  msg_id_req_redis_eval = 10102;
+}
+
+//错误码
+enum ss_redis_proxy_error{
+  redis_nil_error   = 1;
+  execute_failed    = 2;
+}
+
+//redis操作请求
+message req_redis_cmd{
+  repeated string args = 1;
+}
+
+//redis操作返回
+message resp_redis_cmd{
+  optional int32  err_code = 1;
+  optional string err_desc = 2;
+  optional string result = 3; //json format
+}
+
+message req_redis_eval{
+  optional string script = 1;
+  repeated string keys   = 2;
+  repeated string args   = 3;
+}
+
+message resp_redis_eval{
+  optional int32  err_code = 1;
+  optional string err_desc = 2;
+  optional string result = 3; //json format
+}
