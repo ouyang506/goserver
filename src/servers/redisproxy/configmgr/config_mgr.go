@@ -1,4 +1,4 @@
-package config
+package configmgr
 
 import (
 	"encoding/xml"
@@ -13,32 +13,32 @@ var (
 	confMgr *ConfigMgr = nil
 )
 
-type ConfigMgr struct {
-	conf *Config
-}
-
 // singleton
-func GetConfigMgr() *ConfigMgr {
+func Instance() *ConfigMgr {
 	once.Do(func() {
 		confMgr = newConfigMgr()
-		conf := newConfig()
-		err := conf.load("../../../conf/redisproxy.xml")
-		if err != nil {
-			fmt.Printf("load config error: %v", err)
-		} else {
-			confMgr.conf = conf
-		}
 	})
 	return confMgr
 }
 
-func GetConfig() *Config {
-	return GetConfigMgr().conf
+type ConfigMgr struct {
+	conf *Config
 }
 
 func newConfigMgr() *ConfigMgr {
 	mgr := &ConfigMgr{}
+	conf := newConfig()
+	err := conf.load("../../../conf/redisproxy.xml")
+	if err != nil {
+		fmt.Printf("load config error: %v\n", err)
+	} else {
+		mgr.conf = conf
+	}
 	return mgr
+}
+
+func (mgr *ConfigMgr) GetConfig() *Config {
+	return mgr.conf
 }
 
 type Config struct {

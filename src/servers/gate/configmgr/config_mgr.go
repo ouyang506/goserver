@@ -1,9 +1,9 @@
-package config
+package configmgr
 
 import (
 	"encoding/xml"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"os"
 	"sync"
 )
@@ -18,11 +18,11 @@ type ConfigMgr struct {
 }
 
 // singleton
-func GetConfigMgr() *ConfigMgr {
+func Instance() *ConfigMgr {
 	once.Do(func() {
 		confMgr = newConfigMgr()
 		conf := newConfig()
-		err := conf.load("../../../conf/mysqlproxy.xml")
+		err := conf.load("../../../conf/gate.xml")
 		if err != nil {
 			fmt.Printf("load config error: %v", err)
 		} else {
@@ -32,19 +32,19 @@ func GetConfigMgr() *ConfigMgr {
 	return confMgr
 }
 
-func GetConfig() *Config {
-	return GetConfigMgr().conf
-}
-
 func newConfigMgr() *ConfigMgr {
 	mgr := &ConfigMgr{}
 	return mgr
 }
 
+func (mgr *ConfigMgr) GetConfig() *Config {
+	return mgr.conf
+}
+
 type Config struct {
 	RegistryConf RegistryConfig `xml:"registry"`
 	ListenConf   ListenConfig   `xml:"listen"`
-	MysqlConf    MysqlConfig    `xml:"mysql"`
+	Outer        OuterConfig    `xml:"outer"`
 }
 
 type RegistryConfig struct {
@@ -64,13 +64,10 @@ type ListenConfig struct {
 	Port int    `xml:"port,omitempty"`
 }
 
-type MysqlConfig struct {
-	IP          string `xml:"ip,omitempty"`
-	Port        int    `xml:"port,omitempty"`
-	Database    string `xml:"database,omitempty"`
-	Username    string `xml:"username,omitempty"`
-	Password    string `xml:"password,omitempty"`
-	PoolMaxConn int    `xml:"pool_max_conn,omitempty"`
+type OuterConfig struct {
+	OuterIp  string `xml:"outer_ip,omitempty"`
+	ListenIp string `xml:"listen_ip,omitempty"`
+	Port     int    `xml:"port,omitempty"`
 }
 
 func newConfig() *Config {
@@ -84,7 +81,7 @@ func (conf *Config) load(fileName string) error {
 		return err
 	}
 
-	content, err := io.ReadAll(f)
+	content, err := ioutil.ReadAll(f)
 	if err != nil {
 		return err
 	}

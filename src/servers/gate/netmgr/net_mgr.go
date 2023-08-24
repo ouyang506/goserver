@@ -1,43 +1,66 @@
 package netmgr
 
 import (
+	"common"
+	"framework/registry"
 	"framework/rpc"
-	"gate/config"
+	"gate/configmgr"
 	"gate/handler"
-	"strings"
+	"sync"
 )
+
+var (
+	once           = sync.Once{}
+	netMgr *NetMgr = nil
+)
+
+// singleton
+func Instance() *NetMgr {
+	once.Do(func() {
+		netMgr = newNetMgr()
+	})
+	return netMgr
+}
 
 // 网络管理
 type NetMgr struct {
-	conf       *config.Config
-	msgHandler *handler.MessageHandler
 }
 
-func NewNetMgr() *NetMgr {
+func newNetMgr() *NetMgr {
 	mgr := &NetMgr{}
 
 	return mgr
 }
 
-func (mgr *NetMgr) Init(conf *config.Config) {
-	mgr.conf = conf
+func (mgr *NetMgr) Start() {
+	conf := configmgr.Instance().GetConfig()
 
 	// init rpc message handler
-	mgr.msgHandler = handler.NewMessageHandler()
+	msgHandler := handler.NewMessageHandler()
 
-	// startup rpc
-	rpc.InitRpc(rpc.RpcModeOuter, mgr.msgHandler, rpc.WithNetEventHandler(NewNetEventHandler()))
-}
+	// startup outer rpc for clients
+	rpc.InitRpc(rpc.RpcModeOuter, msgHandler)
+	// startup outer rpc for inner server
+	rpc.InitRpc(rpc.RpcModeInner, msgHandler)
 
-func (mgr *NetMgr) Start() {
-	mgr.listenForClients()
-}
+	// register self endpoint to center
+	etcdConf := registry.EtcdConfig{
+		Endpoints: conf.RegistryConf.EtcdConf.Endpoints.Items,
+		Username:  conf.RegistryConf.EtcdConf.Username,
+		Password:  conf.RegistryConf.EtcdConf.Password,
+	}
+	regCenter := registry.NewEtcdRegistry(etcdConf)
 
-func (mgr *NetMgr) listenForClients() error {
-	ip := strings.TrimSpace(mgr.conf.Outer.IP)
-	port := mgr.conf.Outer.Port
+	skey := registry.ServiceKey{
+		ServerType: common.ServerTypeMysqlProxy,
+		IP:         conf.ListenConf.Ip,
+		Port:       conf.ListenConf.Port,
+	}
+	regCenter.RegService(skey)
+	// fetch current all services and then watch
+	rpc.FetchWatchService(rpc.RpcModeInner, regCenter)
 
-	rpc.TcpListen(rpc.RpcModeOuter, ip, port)
-
-	return nil
+	//start listen
+	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
+	rpc.TcpListen(rpc.RpcModeOuter, conf.Outer.ListenIp, conf.Outer.Port)
 }

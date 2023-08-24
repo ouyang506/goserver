@@ -59,7 +59,7 @@ type InnerNetEventHandler struct {
 func NewInnerNetEventHandler() *InnerNetEventHandler {
 	return &InnerNetEventHandler{
 		RpcNetEventHandlerBase: RpcNetEventHandlerBase{
-			processMsgPool: workpool.NewPool(4096),
+			processMsgPool: workpool.NewPool(1024),
 		},
 	}
 }
@@ -125,7 +125,11 @@ type OuterNetEventHandler struct {
 }
 
 func NewOuterNetEventHandler() *OuterNetEventHandler {
-	return &OuterNetEventHandler{}
+	return &OuterNetEventHandler{
+		RpcNetEventHandlerBase: RpcNetEventHandlerBase{
+			processMsgPool: workpool.NewPool(1024),
+		},
+	}
 }
 
 func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
@@ -133,11 +137,8 @@ func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 	msgId := rcvOuterMsg.MsgID
 	log.Debug("NetEvent OnRcvMsg, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
 	switch {
-	case rcvOuterMsg.MsgID < 0:
+	case rcvOuterMsg.MsgID <= 0: //客户端发过来的只有rpc请求,没有rpc回复
 		log.Error("receive wrong message id, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
-		return
-	case rcvOuterMsg.MsgID == 0:
-		h.GetOwner().OnRcvResponse(rcvOuterMsg.CallId, rcvOuterMsg.Content)
 		return
 	case rcvOuterMsg.MsgID > 0:
 		reqMsg := rcvOuterMsg.Content
@@ -147,19 +148,30 @@ func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 			log.Error("rpc message handle function not found, sessionId : %d, msgId: %d ", c.GetSessionId(), msgId)
 			return
 		}
-		if respMsg == nil {
-			method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
-		} else {
-			method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
 
-			respOuterMsg := &OuterMessage{}
-			respOuterMsg.CallId = rcvOuterMsg.CallId
-			respOuterMsg.MsgID = 0
-			respOuterMsg.Content = respMsg
+		h.processMsgPool.Submit(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					buff := make([]byte, 4096)
+					n := runtime.Stack(buff, false)
+					log.Error("handler rcv msg panic, msgId: %v, stack : %s", msgId, string(buff[:n]))
+				}
+			}()
 
-			h.GetOwner().TcpSendMsg(c.GetSessionId(), respOuterMsg)
-			return
-		}
+			if respMsg == nil {
+				method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
+			} else {
+				method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
+
+				respOuterMsg := &OuterMessage{}
+				respOuterMsg.CallId = rcvOuterMsg.CallId
+				respOuterMsg.MsgID = 0
+				respOuterMsg.Content = respMsg
+
+				h.GetOwner().TcpSendMsg(c.GetSessionId(), respOuterMsg)
+				return
+			}
+		}, workpool.WithWorkerHashKey(uint64(c.GetSessionId())))
 
 	default:
 		return

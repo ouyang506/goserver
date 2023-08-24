@@ -4,19 +4,33 @@ import (
 	"common"
 	"framework/rpc"
 	"mockclient/handler"
+	"sync"
 )
+
+var (
+	once           = sync.Once{}
+	netMgr *NetMgr = nil
+)
+
+// singleton
+func Instance() *NetMgr {
+	once.Do(func() {
+		netMgr = newNetMgr()
+	})
+	return netMgr
+}
 
 // 网络管理
 type NetMgr struct {
 }
 
-func NewNetMgr() *NetMgr {
+func newNetMgr() *NetMgr {
 	mgr := &NetMgr{}
 	return mgr
 }
 
 func (mgr *NetMgr) Start() {
-	rpc.InitRpc(rpc.RpcModeOuter, handler.NewMessageHandler(), rpc.WithNetEventHandler(NewNetEventHandler()))
+	rpc.InitRpc(rpc.RpcModeOuter, handler.NewMessageHandler())
 }
 
 func (mgr *NetMgr) RemoveGateStubs() {

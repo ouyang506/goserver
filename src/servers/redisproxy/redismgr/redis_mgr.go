@@ -6,17 +6,8 @@ import (
 	"redisproxy/config"
 	"sync"
 
-	//"github.com/go-redis/redis/v8"
 	"github.com/redis/go-redis/v9"
 )
-
-type CmdClient interface {
-	Do(ctx context.Context, args ...interface{}) *redis.Cmd
-}
-
-type RedisMgr struct {
-	client CmdClient
-}
 
 var (
 	once               = sync.Once{}
@@ -24,11 +15,19 @@ var (
 )
 
 // singleton
-func GetRedisMgr() *RedisMgr {
+func Instance() *RedisMgr {
 	once.Do(func() {
 		redisMgr = newRedisMgr()
 	})
 	return redisMgr
+}
+
+type RedisCmdClient interface {
+	Do(ctx context.Context, args ...interface{}) *redis.Cmd
+}
+
+type RedisMgr struct {
+	client RedisCmdClient
 }
 
 func newRedisMgr() *RedisMgr {

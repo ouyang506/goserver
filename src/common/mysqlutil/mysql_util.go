@@ -46,6 +46,20 @@ func Query(sql string, params ...any) (result *QueryResult, err error) {
 	return
 }
 
+// 查询一行数据，结尾自动添加limit 1
+// 如果不需要添加后缀，使用Query()
+func QueryOne(sql string, params ...any) (row *ResultRow, err error) {
+	sql += " limit 1"
+	result, err := Query(sql, params...)
+	if err != nil {
+		return nil, err
+	}
+	if result.RowCount() == 0 {
+		return nil, nil
+	}
+	return result.Row(0), nil
+}
+
 // insert , update
 func Execute(sql string, params ...any) (lastInsertId int64, affectCount int64, err error) {
 	req := &ss.ReqExecuteSql{}

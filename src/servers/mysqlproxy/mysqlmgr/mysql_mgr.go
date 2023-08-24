@@ -1,22 +1,14 @@
-package dbmgr
+package mysqlmgr
 
 import (
 	"database/sql"
 	"fmt"
 	"framework/log"
-	"mysqlproxy/config"
+	"mysqlproxy/configmgr"
 	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
 )
-
-const (
-	MysqlCharset = "utf8"
-)
-
-type MysqlMgr struct {
-	db *sql.DB
-}
 
 var (
 	once               = sync.Once{}
@@ -24,11 +16,19 @@ var (
 )
 
 // singleton
-func GetMysqlMgr() *MysqlMgr {
+func Instance() *MysqlMgr {
 	once.Do(func() {
 		mysqlMgr = newMysqlMgr()
 	})
 	return mysqlMgr
+}
+
+const (
+	MysqlCharset = "utf8"
+)
+
+type MysqlMgr struct {
+	db *sql.DB
 }
 
 func newMysqlMgr() *MysqlMgr {
@@ -41,7 +41,7 @@ func (mgr *MysqlMgr) Start() {
 }
 
 func (mgr *MysqlMgr) doConnect() {
-	conf := config.GetConfig()
+	conf := configmgr.Instance().GetConfig()
 	dataSource := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=false",
 		conf.MysqlConf.Username, conf.MysqlConf.Password,
 		conf.MysqlConf.IP, conf.MysqlConf.Port, conf.MysqlConf.Database, MysqlCharset)

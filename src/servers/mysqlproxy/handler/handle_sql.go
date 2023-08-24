@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"framework/log"
 	"framework/proto/pb/ss"
-	"mysqlproxy/dbmgr"
+	"mysqlproxy/mysqlmgr"
 )
 
 func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.RespExecuteSql) {
@@ -15,8 +15,6 @@ func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.
 		respJson, _ := json.Marshal(resp)
 		log.Debug("response RespExecuteSql : %s", string(respJson))
 	}()
-
-	mysqlMgr := dbmgr.GetMysqlMgr()
 
 	sql := req.GetSql()
 	paramJson := req.GetParams()
@@ -33,7 +31,7 @@ func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.
 
 	switch req.GetType() {
 	case ss.DbOperType_oper_query:
-		columns, result, err := mysqlMgr.QuerySql(sql, params...)
+		columns, result, err := mysqlmgr.Instance().QuerySql(sql, params...)
 		if err != nil {
 			log.Error("query sql error, %v", err)
 			resp.ErrCode = new(int32)
@@ -52,7 +50,7 @@ func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.
 		}
 		resp.QueryResult.Rows = rows
 	case ss.DbOperType_oper_execute:
-		lastInsertId, rowsAffected, err := mysqlMgr.ExecuteSql(sql, params...)
+		lastInsertId, rowsAffected, err := mysqlmgr.Instance().ExecuteSql(sql, params...)
 		if err != nil {
 			log.Error("execute sql error, %v", err)
 			resp.ErrCode = new(int32)

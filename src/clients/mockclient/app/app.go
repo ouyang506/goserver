@@ -3,7 +3,7 @@ package app
 import (
 	"fmt"
 	"framework/log"
-	"mockclient/config"
+	"mockclient/configmgr"
 	"mockclient/robot"
 	"os"
 	"sync"
@@ -24,16 +24,14 @@ func GetApp() *App {
 }
 
 type App struct {
-	conf  *config.Config
 	robot *robot.Robot
 }
 
 func (app *App) init() bool {
 	// init config
-	app.conf = config.NewConfig()
-	err := app.conf.Load("../../../conf/client.xml")
-	if err != nil {
-		fmt.Printf("Load config error, program exit! error message : %v", err)
+	conf := configmgr.Instance().GetConfig()
+	if conf == nil {
+		fmt.Printf("load config error, program exit!")
 		os.Exit(1)
 	}
 
@@ -45,7 +43,7 @@ func (app *App) init() bool {
 	log.SetLogger(logger)
 
 	// init robot
-	app.robot = robot.NewRobot(app.conf)
+	app.robot = robot.NewRobot()
 
 	return true
 }
@@ -57,7 +55,7 @@ func (app *App) Start() {
 
 	// log app config info
 	log.Info("App config info :")
-	log.Info("%+v", app.conf)
+	log.Info("%+v", configmgr.Instance().GetConfig())
 
 	//app.netMgr.Start()
 

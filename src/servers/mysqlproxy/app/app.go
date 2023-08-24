@@ -1,11 +1,10 @@
 package app
 
 import (
-	"common/mysqlutil"
 	"fmt"
 	"framework/log"
-	"mysqlproxy/config"
-	"mysqlproxy/dbmgr"
+	"mysqlproxy/configmgr"
+	"mysqlproxy/mysqlmgr"
 	"mysqlproxy/netmgr"
 	"os"
 	"sync"
@@ -30,7 +29,7 @@ type App struct {
 
 func (app *App) init() bool {
 	// init config
-	conf := config.GetConfig()
+	conf := configmgr.Instance().GetConfig()
 	if conf == nil {
 		fmt.Printf("load config error, program exit!")
 		os.Exit(1)
@@ -54,10 +53,10 @@ func (app *App) Start() {
 	log.Info("App Start ..")
 	// log app config info
 	log.Info("App config info :")
-	log.Info("%+v", config.GetConfig())
+	log.Info("%+v", configmgr.Instance().GetConfig())
 
-	dbmgr.GetMysqlMgr().Start()
-	netmgr.GetNetMgr().Start()
+	mysqlmgr.Instance().Start()
+	netmgr.Instance().Start()
 
 	for {
 		app.update()
@@ -67,15 +66,5 @@ func (app *App) Start() {
 
 // main loop
 func (app *App) update() {
-	log.Debug("begin execute sql")
-	result, err := mysqlutil.Query("select * from account where username = ?", "admin")
-	log.Debug("end execute sql, result: %+v, err: %v", result, err)
-	if err != nil {
-		return
-	}
-	rows := result.Rows()
-	for i, row := range rows {
-		log.Debug("row_%v : username = %v, passwd = %v", i,
-			row.FieldString("username"), row.FieldString("passwd"))
-	}
+
 }

@@ -1,16 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
-    <!-- gate监听客户端 -->
-    <outer>
-        <ip>0.0.0.0</ip>
-        <port>5100</port>
-    </outer>
-
     <!-- 服务注册 -->
     <registry>
+		<etcd>
+			<endpoints>
+				<item>127.0.0.1:2378</item>
+				<item>127.0.0.1:2379</item>
+				<item>127.0.0.1:2380</item>
+			</endpoints>
+			<username></username>
+			<password></password>
+		</etcd>
+	</registry>
+	<!-- 服务监听 -->
+    <listen>
         <ip>127.0.0.1</ip>
         <port>5200</port>
-    </registry>
+    </listen>
+	
+	<!-- gate监听客户端 -->
+    <outer>
+		<outer_ip>127.0.0.1</outer_ip>
+        <listen_ip>0.0.0.0</listen_ip>
+        <port>5100</port>
+    </outer>
 
     <!-- gate服务转发消息 -->
     <transfer_message>

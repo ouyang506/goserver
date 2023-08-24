@@ -156,6 +156,31 @@ func HMGet(k string, f ...string) ([]string, error) {
 	return strResult, nil
 }
 
+func HGetAll(k string) (map[string]string, error) {
+	cmdArgs := []string{"hgetall", k}
+	result := []any{}
+	err := doCallRedis(cmdArgs, &result)
+	if err != nil {
+		return nil, err
+	}
+	strResult := make([]string, len(result))
+	for i := range result {
+		switch v := result[i].(type) {
+		case nil:
+			strResult[i] = ""
+		case string:
+			strResult[i] = v
+		default:
+			strResult[i] = fmt.Sprintf("%v", result[i])
+		}
+	}
+	mapResult := make(map[string]string)
+	for i := 0; i < len(strResult)/2; i++ {
+		mapResult[strResult[i*2]] = strResult[i*2+1]
+	}
+	return mapResult, nil
+}
+
 func HDel(k string, f ...string) error {
 	cmdArgs := []string{"hdel", k}
 	cmdArgs = append(cmdArgs, f...)

@@ -3,7 +3,8 @@ package app
 import (
 	"fmt"
 	"framework/log"
-	"gate/config"
+	"gate/configmgr"
+	"gate/keepalivemgr"
 	"gate/netmgr"
 	"os"
 	"sync"
@@ -24,16 +25,13 @@ func GetApp() *App {
 }
 
 type App struct {
-	conf   *config.Config
-	netMgr *netmgr.NetMgr
 }
 
 func (app *App) init() bool {
 	// init config
-	app.conf = config.NewConfig()
-	err := app.conf.Load("../../../conf/gate.xml")
-	if err != nil {
-		fmt.Printf("Load config error, program exit! error message : %v", err)
+	conf := configmgr.Instance().GetConfig()
+	if conf == nil {
+		fmt.Printf("load config error, program exit!")
 		os.Exit(1)
 	}
 
@@ -43,10 +41,6 @@ func (app *App) init() bool {
 	logger.AddSink(log.NewFileLogSink("gate", "../../../logs/", log.RotateByHour))
 	logger.Start()
 	log.SetLogger(logger)
-
-	// init net manager
-	app.netMgr = netmgr.NewNetMgr()
-	app.netMgr.Init(app.conf)
 
 	return true
 }
@@ -58,13 +52,14 @@ func (app *App) Start() {
 	log.Info("App Start ..")
 	// log app config info
 	log.Info("App config info :")
-	log.Info("%+v", app.conf)
+	log.Info("%+v", configmgr.Instance().GetConfig())
 
-	app.netMgr.Start()
+	netmgr.Instance().Start()
+	keepalivemgr.Instance().Start()
 
 	for {
 		app.update()
-		time.Sleep(time.Second * 10000)
+		time.Sleep(time.Millisecond * 50)
 	}
 }
 

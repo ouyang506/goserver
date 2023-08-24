@@ -3,7 +3,7 @@ package app
 import (
 	"fmt"
 	"framework/log"
-	"login/config"
+	"login/configmgr"
 	"login/handler"
 	"os"
 	"sync"
@@ -25,16 +25,14 @@ func GetApp() *App {
 }
 
 type App struct {
-	conf       *config.Config
 	httpEngine *gin.Engine
 }
 
 func (app *App) init() bool {
 	// init config
-	app.conf = config.NewConfig()
-	err := app.conf.Load("../../../conf/login.xml")
-	if err != nil {
-		fmt.Printf("Load config error, program exit! error message : %v", err)
+	conf := configmgr.Instance().GetConfig()
+	if conf == nil {
+		fmt.Printf("load config error, program exit!")
 		os.Exit(1)
 	}
 
@@ -62,8 +60,10 @@ func (app *App) Start() {
 	log.Info("App Start ..")
 	// log app config info
 	log.Info("App config info :")
-	log.Info("%+v", app.conf)
+	log.Info("%+v", configmgr.Instance().GetConfig())
 
-	addr := fmt.Sprintf("%s:%d", app.conf.HttpListen.IP, app.conf.HttpListen.Port)
+	// start http server
+	conf := configmgr.Instance().GetConfig()
+	addr := fmt.Sprintf("%s:%d", conf.HttpListen.IP, conf.HttpListen.Port)
 	app.httpEngine.Run(addr)
 }

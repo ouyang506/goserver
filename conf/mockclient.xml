@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
     <login_servers>
-        <login_server ip="127.0.0.1" port="5000"/>
+        <login_server>
+			<ip>0.0.0.0</ip>
+			<port>5000</port>
+		</login_server>
     </login_servers>
 </root>

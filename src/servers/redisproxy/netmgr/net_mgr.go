@@ -15,7 +15,7 @@ var (
 )
 
 // singleton
-func GetNetMgr() *NetMgr {
+func Instance() *NetMgr {
 	once.Do(func() {
 		netMgr = NewNetMgr()
 	})
@@ -37,7 +37,6 @@ func (mgr *NetMgr) Start() {
 	// startup rpc
 	msgHandler := handler.NewMessageHandler()
 	rpc.InitRpc(rpc.RpcModeInner, msgHandler)
-	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 
 	// register self endpoint to center
 	etcdConf := registry.EtcdConfig{
@@ -53,7 +52,9 @@ func (mgr *NetMgr) Start() {
 		Port:       conf.ListenConf.Port,
 	}
 	regCenter.RegService(skey)
-
 	// fetch current all services and then watch
 	rpc.FetchWatchService(rpc.RpcModeInner, regCenter)
+
+	//start listen
+	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 }

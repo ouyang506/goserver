@@ -1,11 +1,10 @@
 package app
 
 import (
-	"common/redisutil"
 	"fmt"
 	"framework/log"
 	"os"
-	"redisproxy/config"
+	"redisproxy/configmgr"
 	"redisproxy/netmgr"
 	"redisproxy/redismgr"
 	"sync"
@@ -30,7 +29,7 @@ type App struct {
 
 func (app *App) init() bool {
 	// init config
-	conf := config.GetConfig()
+	conf := configmgr.Instance().GetConfig()
 	if conf == nil {
 		fmt.Printf("load config error, program exit!")
 		os.Exit(1)
@@ -54,24 +53,18 @@ func (app *App) Start() {
 	log.Info("App Start ..")
 	// log app config info
 	log.Info("App config info :")
-	log.Info("%+v", config.GetConfig())
+	log.Info("%+v", configmgr.Instance().GetConfig())
 
-	redismgr.GetRedisMgr().Start()
-	netmgr.GetNetMgr().Start()
+	redismgr.Instance().Start()
+	netmgr.Instance().Start()
 
 	for {
 		app.update()
-		time.Sleep(time.Millisecond * 50 * 10000)
+		time.Sleep(time.Millisecond * 50)
 	}
 }
 
 // main loop
 func (app *App) update() {
-	redisutil.HSet("htest", "f1", "v1")
 
-	v, err := redisutil.HGet("htest", "f12")
-	log.Debug("get result, err: %v, value: %v", err, v)
-
-	v2, err := redisutil.HMGet("htest", "f1", "f2")
-	log.Debug("get result, err: %v, value: %v", err, v2)
 }

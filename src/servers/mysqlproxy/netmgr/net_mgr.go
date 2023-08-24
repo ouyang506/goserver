@@ -4,7 +4,7 @@ import (
 	"common"
 	"framework/registry"
 	"framework/rpc"
-	"mysqlproxy/config"
+	"mysqlproxy/configmgr"
 	"mysqlproxy/handler"
 	"sync"
 )
@@ -15,9 +15,9 @@ var (
 )
 
 // singleton
-func GetNetMgr() *NetMgr {
+func Instance() *NetMgr {
 	once.Do(func() {
-		netMgr = NewNetMgr()
+		netMgr = newNetMgr()
 	})
 	return netMgr
 }
@@ -26,18 +26,17 @@ func GetNetMgr() *NetMgr {
 type NetMgr struct {
 }
 
-func NewNetMgr() *NetMgr {
+func newNetMgr() *NetMgr {
 	mgr := &NetMgr{}
 	return mgr
 }
 
 func (mgr *NetMgr) Start() {
-	conf := config.GetConfig()
+	conf := configmgr.Instance().GetConfig()
 
 	// startup rpc
 	msgHandler := handler.NewMessageHandler()
 	rpc.InitRpc(rpc.RpcModeInner, msgHandler)
-	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 
 	// register self endpoint to center
 	etcdConf := registry.EtcdConfig{
@@ -56,4 +55,7 @@ func (mgr *NetMgr) Start() {
 
 	// fetch current all services and then watch
 	rpc.FetchWatchService(rpc.RpcModeInner, regCenter)
+
+	// start listen
+	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 }

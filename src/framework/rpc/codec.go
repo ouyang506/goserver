@@ -31,12 +31,14 @@ func NewInnerMessageCodec(rpcMgr *RpcManager) *InnerMessageCodec {
 func (cc *InnerMessageCodec) Encode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	innerMsg := in.(*InnerMessage)
 
-	out := make([]byte, 12)
+	out := make([]byte, 20)
 	skip := 0
 	binary.LittleEndian.PutUint64(out[skip:], uint64(innerMsg.CallId))
 	skip += 8
 	binary.LittleEndian.PutUint32(out[skip:], uint32(innerMsg.MsgID))
 	skip += 4
+	binary.LittleEndian.PutUint64(out[skip:], uint64(innerMsg.Guid))
+	skip += 8
 
 	if innerMsg.Content != nil {
 		contentBytes, _ := proto.Marshal(innerMsg.Content)
@@ -48,7 +50,7 @@ func (cc *InnerMessageCodec) Encode(c network.Connection, in interface{}) (inter
 
 func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (interface{}, bool, error) {
 	innerMsgBytes := in.([]byte)
-	if len(innerMsgBytes) < 12 {
+	if len(innerMsgBytes) < 20 {
 		return nil, false, errors.New("inner message length error")
 	}
 
@@ -58,6 +60,8 @@ func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (inter
 	skip += 8
 	innerMsg.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
 	skip += 4
+	innerMsg.Guid = int64(binary.LittleEndian.Uint64(innerMsgBytes))
+	skip += 8
 
 	content := innerMsgBytes[skip:]
 	switch {

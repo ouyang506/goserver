@@ -15,14 +15,13 @@ func (h *MessageHandler) HandleRpcReqRedisCmd(req *ss.ReqRedisCmd, resp *ss.Resp
 		log.Debug("response RespRedisCmd : %s", string(respJson))
 	}()
 
-	redisMgr := redismgr.GetRedisMgr()
 	args := make([]any, len(req.GetArgs()))
 	for i, v := range req.GetArgs() {
 		args[i] = v
 	}
-	result, err := redisMgr.DoCmd(args...)
+	result, err := redismgr.Instance().DoCmd(args...)
 	if err != nil {
-		if redisMgr.IsNilError(err) {
+		if redismgr.Instance().IsNilError(err) {
 			resp.ErrCode = new(int32)
 			*resp.ErrCode = int32(ss.SsRedisProxyError_redis_nil_error)
 			resp.ErrDesc = new(string)

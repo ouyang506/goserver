@@ -1,31 +1,33 @@
 package netmgr
 
 import (
+	"framework/log"
 	"framework/network"
 	"framework/rpc"
 )
 
 // 网络事件回调
-type NetEventHandler struct {
+type ClientNetEventHandler struct {
 	rpc.OuterNetEventHandler
 }
 
-func NewNetEventHandler() *NetEventHandler {
-	return &NetEventHandler{}
+func NewClientNetEventHandler() *ClientNetEventHandler {
+	return &ClientNetEventHandler{}
 }
 
-func (e *NetEventHandler) OnAccept(c network.Connection) {
+func (e *ClientNetEventHandler) OnAccept(c network.Connection) {
 	e.OuterNetEventHandler.OnAccept(c)
 }
 
-func (e *NetEventHandler) OnConnect(c network.Connection, err error) {
-	e.OuterNetEventHandler.OnConnect(c, err)
+func (e *ClientNetEventHandler) OnConnect(c network.Connection, err error) {
+	//服务器不会主动去连接客户端
+	log.Error("unexpected network event OnConnect")
 }
 
-func (e *NetEventHandler) OnClosed(c network.Connection) {
+func (e *ClientNetEventHandler) OnClosed(c network.Connection) {
 	e.OuterNetEventHandler.OnClosed(c)
 }
 
-func (e *NetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
+func (e *ClientNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 	e.OuterNetEventHandler.OnRcvMsg(c, msg)
 }
