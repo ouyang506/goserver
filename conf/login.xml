@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
+	<registry>
+		<etcd>
+			<endpoints>
+				<item>127.0.0.1:2378</item>
+				<item>127.0.0.1:2379</item>
+				<item>127.0.0.1:2380</item>
+			</endpoints>
+			<username></username>
+			<password></password>
+		</etcd>
+	</registry>
+	
     <http_listen>
 		<ip>0.0.0.0</ip>
 		<port>5000</port>

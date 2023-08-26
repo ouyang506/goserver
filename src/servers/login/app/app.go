@@ -5,6 +5,7 @@ import (
 	"framework/log"
 	"login/configmgr"
 	"login/handler"
+	"login/netmgr"
 	"os"
 	"sync"
 
@@ -61,6 +62,9 @@ func (app *App) Start() {
 	// log app config info
 	log.Info("App config info :")
 	log.Info("%+v", configmgr.Instance().GetConfig())
+
+	// start rpc net mgr
+	netmgr.Instance().Start()
 
 	// start http server
 	conf := configmgr.Instance().GetConfig()

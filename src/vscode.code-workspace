@@ -98,14 +98,33 @@
 		"compounds": [
 			{
 					"name": "LaunchAll",
-					"configurations": ["LaunchLogin", "LaunchGate", "LaunchMysqlProxy","LaunchRedisProxy" "LaunchMockClient"],
+					"configurations": [
+						"LaunchLogin", 
+						"LaunchGate", 
+						"LaunchMysqlProxy",
+						"LaunchRedisProxy",
+						"LaunchMockClient"
+					],
 					"stopAll": true,
 					"presentation": {
 							"hidden": false,
 							"group": "",
 							"order": 1
 					}					
-			}
+			},
+			{
+				"name": "LaunchMyDebug",
+				"configurations": [
+					"LaunchLogin",  
+					"LaunchMockClient"
+				],
+				"stopAll": true,
+				"presentation": {
+						"hidden": false,
+						"group": "",
+						"order": 1
+				}					
+		}
 	]
 	}
 }

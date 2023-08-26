@@ -48,6 +48,7 @@ func (mgr *KeepAliveMgr) Stop() {
 }
 
 // 将对外ip+port注册到redis，供login服务使用
+// 注册中心只有对内的ip+port
 func (mgr *KeepAliveMgr) RegOuterAddrToRedis() {
 	conf := configmgr.Instance().GetConfig()
 	ip, port := conf.Outer.OuterIp, conf.Outer.Port

@@ -3,7 +3,7 @@ package redismgr
 import (
 	"context"
 	"errors"
-	"redisproxy/config"
+	"redisproxy/configmgr"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -40,7 +40,7 @@ func (mgr *RedisMgr) Start() {
 }
 
 func (mgr *RedisMgr) initClient() {
-	conf := config.GetConfig()
+	conf := configmgr.Instance().GetConfig()
 	if conf.RedisConf.Type == 0 {
 		mgr.client = redis.NewClient(&redis.Options{
 			Addr:         conf.RedisConf.Endpoints.Items[0],

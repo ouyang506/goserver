@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"framework/log"
 	"mockclient/configmgr"
-	"mockclient/robot"
+	"mockclient/robotmgr"
 	"os"
 	"sync"
 	"time"
@@ -24,7 +24,6 @@ func GetApp() *App {
 }
 
 type App struct {
-	robot *robot.Robot
 }
 
 func (app *App) init() bool {
@@ -42,9 +41,6 @@ func (app *App) init() bool {
 	logger.Start()
 	log.SetLogger(logger)
 
-	// init robot
-	app.robot = robot.NewRobot()
-
 	return true
 }
 
@@ -57,14 +53,14 @@ func (app *App) Start() {
 	log.Info("App config info :")
 	log.Info("%+v", configmgr.Instance().GetConfig())
 
-	//app.netMgr.Start()
+	robotmgr.Instance().Start()
 
 	for {
 		app.update()
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
 func (app *App) update() {
-	app.robot.Update()
+
 }

@@ -42,7 +42,20 @@ func (mgr *ConfigMgr) GetConfig() *Config {
 }
 
 type Config struct {
-	HttpListen HttpListenAddr `xml:"http_listen"`
+	RegistryConf RegistryConfig `xml:"registry"`
+	HttpListen   HttpListenAddr `xml:"http_listen"`
+}
+
+type RegistryConfig struct {
+	EtcdConf EtcdRegistryConfig `xml:"etcd,omitempty"`
+}
+
+type EtcdRegistryConfig struct {
+	Endpoints struct {
+		Items []string `xml:"item,omitempty"`
+	} `xml:"endpoints,omitempty"`
+	Username string `xml:"username,omitempty"`
+	Password string `xml:"password,omitempty"`
 }
 
 type HttpListenAddr struct {

@@ -22,11 +22,20 @@ func Instance() *NetMgr {
 
 // 网络管理
 type NetMgr struct {
+	running bool
 }
 
 func newNetMgr() *NetMgr {
 	mgr := &NetMgr{}
 	return mgr
+}
+
+func (mgr *NetMgr) CheckStart() {
+	if mgr.running {
+		return
+	}
+	mgr.running = true
+	mgr.Start()
 }
 
 func (mgr *NetMgr) Start() {

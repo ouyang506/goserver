@@ -41,7 +41,7 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 		} else {
 			outerEventHandler := NewOuterNetEventHandler()
 			outerEventHandler.SetOwner(mgr)
-			handler = handler
+			handler = outerEventHandler
 		}
 	case RpcModeInner:
 		codecs = append(codecs, NewInnerMessageCodec(mgr))
@@ -51,9 +51,9 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 			handler = ops.NetEventHandler
 			ops.NetEventHandler.SetOwner(mgr)
 		} else {
-			outerEventHandler := NewInnerNetEventHandler()
-			outerEventHandler.SetOwner(mgr)
-			handler = outerEventHandler
+			innerEventHandler := NewInnerNetEventHandler()
+			innerEventHandler.SetOwner(mgr)
+			handler = innerEventHandler
 		}
 	}
 
@@ -78,6 +78,9 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 // 设置消息委托处理器
 // @param handler 结构体指针
 func (mgr *RpcManager) initMsgHandler(handler any) {
+	if handler == nil {
+		return
+	}
 	methodMap := make(map[int]reflect.Value)
 	refType := reflect.TypeOf(handler)
 	refValue := reflect.ValueOf(handler)

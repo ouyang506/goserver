@@ -43,6 +43,10 @@ func (mgr *NetMgr) Start() {
 	// startup outer rpc for inner server
 	rpc.InitRpc(rpc.RpcModeInner, msgHandler)
 
+	//start listen
+	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
+	rpc.TcpListen(rpc.RpcModeOuter, conf.Outer.ListenIp, conf.Outer.Port)
+
 	// register self endpoint to center
 	etcdConf := registry.EtcdConfig{
 		Endpoints: conf.RegistryConf.EtcdConf.Endpoints.Items,
@@ -52,15 +56,11 @@ func (mgr *NetMgr) Start() {
 	regCenter := registry.NewEtcdRegistry(etcdConf)
 
 	skey := registry.ServiceKey{
-		ServerType: common.ServerTypeMysqlProxy,
+		ServerType: common.ServerTypeGate,
 		IP:         conf.ListenConf.Ip,
 		Port:       conf.ListenConf.Port,
 	}
 	regCenter.RegService(skey)
 	// fetch current all services and then watch
 	rpc.FetchWatchService(rpc.RpcModeInner, regCenter)
-
-	//start listen
-	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
-	rpc.TcpListen(rpc.RpcModeOuter, conf.Outer.ListenIp, conf.Outer.Port)
 }

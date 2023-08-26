@@ -65,6 +65,15 @@ func (fsm *FSM) Update() {
 	cb(fsm.currentEvent)
 }
 
+func (fsm *FSM) CurrentState() string {
+	return fsm.currentState
+}
+
+func (fsm *FSM) CanEvent(event string) bool {
+	_, ok := fsm.transitions[EventTransKey{event, fsm.currentState}]
+	return ok
+}
+
 func (fsm *FSM) Event(event string, extParam ...any) {
 	dst, ok := fsm.transitions[EventTransKey{event, fsm.currentState}]
 	if !ok {

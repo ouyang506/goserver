@@ -4,7 +4,7 @@ import (
 	"common"
 	"framework/registry"
 	"framework/rpc"
-	"redisproxy/config"
+	"redisproxy/configmgr"
 	"redisproxy/handler"
 	"sync"
 )
@@ -32,11 +32,14 @@ func NewNetMgr() *NetMgr {
 }
 
 func (mgr *NetMgr) Start() {
-	conf := config.GetConfig()
+	conf := configmgr.Instance().GetConfig()
 
 	// startup rpc
 	msgHandler := handler.NewMessageHandler()
 	rpc.InitRpc(rpc.RpcModeInner, msgHandler)
+
+	//start listen
+	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 
 	// register self endpoint to center
 	etcdConf := registry.EtcdConfig{
@@ -54,7 +57,4 @@ func (mgr *NetMgr) Start() {
 	regCenter.RegService(skey)
 	// fetch current all services and then watch
 	rpc.FetchWatchService(rpc.RpcModeInner, regCenter)
-
-	//start listen
-	rpc.TcpListen(rpc.RpcModeInner, conf.ListenConf.Ip, conf.ListenConf.Port)
 }

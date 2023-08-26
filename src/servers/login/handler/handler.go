@@ -10,12 +10,22 @@ const (
 	ErrCodeDBFailed       = 2
 	ErrDescDBFailed       = "query db failed"
 
-	ErrCodeInvalidUserOrPasswd = 101
+	ErrCodeInvalidUsername     = 101
+	ErrDescInvalidUsername     = "invalid username"
+	ErrCodeUsernameExist       = 102
+	ErrDescUsernameExist       = "username has been existed"
+	ErrCodeInvalidUserOrPasswd = 103
 	ErrDescInvalidUserOrPasswd = "login user name or password error"
-	ErrCodeValidGateNotFound   = 102
+	ErrCodeValidGateNotFound   = 104
 	ErrDescValidGateNotFound   = "available gate not found"
+	ErrCodeInvalidNickname     = 105
+	ErrDescInvalidNickname     = "invalid nickname"
+	ErrCodeNicknameExist       = 106
+	ErrDescNicknameExist       = "nickname has been existed"
 )
 
 func RegHttpHandler(engine *gin.Engine) {
-	engine.POST("/login", handlerAccountLogin)
+	engine.POST("/account/create", handlerCreateAccount)
+	engine.POST("/account/login", handleLoginAccount)
+	engine.POST("/role/create", handleCreateRole)
 }
