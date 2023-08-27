@@ -69,7 +69,7 @@ func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (inter
 		rpcEntry := cc.rpcMgr.GetRpc(innerMsg.CallId)
 		if rpcEntry == nil {
 			// rpc has been timeout
-			log.Error("rpc has been removed, callId = %v", innerMsg.CallId)
+			log.Warn("rpc maybe timeout, callId: %v", innerMsg.CallId)
 			return nil, false, nil
 		}
 		err := proto.Unmarshal(content, rpcEntry.RespMsg)
@@ -149,8 +149,9 @@ func (cc *OuterMessageCodec) Decode(c network.Connection, in interface{}) (inter
 	switch {
 	case msg.MsgID == 0: //rpc response
 		rpcEntry := cc.rpcMgr.GetRpc(msg.CallId)
-		if rpcEntry != nil {
+		if rpcEntry == nil {
 			// rpc has been timeout
+			log.Warn("rpc maybe timeout, callId: %v", msg.CallId)
 			return nil, false, nil
 		}
 		err := proto.Unmarshal(content, rpcEntry.RespMsg)

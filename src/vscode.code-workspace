@@ -116,6 +116,7 @@
 				"name": "LaunchMyDebug",
 				"configurations": [
 					"LaunchLogin",  
+					"LaunchGate",
 					"LaunchMockClient"
 				],
 				"stopAll": true,

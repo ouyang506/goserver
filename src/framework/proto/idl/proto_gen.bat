@@ -3,6 +3,8 @@ set pwd=%cd%
 : protoc生成go胶水代码
 cd ../../../../tools
 
+protoc -I../src/framework/proto/idl/ --go_out=../src/framework/proto --go_opt=Merror_code.proto=pb/ 	error_code.proto
+
 set protoc_cs=protoc -I../src/framework/proto/idl/cs --go_out=../src/framework/proto/pb
 %protoc_cs%  --go_opt=Mcs_common.proto=cs/ 	cs_common.proto
 %protoc_cs%  --go_opt=Mcs_gate.proto=cs/ 	cs_gate.proto

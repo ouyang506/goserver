@@ -20,10 +20,12 @@ message resp_heart_beat{
 
 //登录gateway请求
 message req_login_gate{
-  optional string token = 1;
+  optional int64  role_id = 1;
+  optional string token   = 2;
 }
 
 //登录gateway返回
 message resp_login_gate{
-  optional int32 result = 1;
+  optional int32  err_code = 1;
+  optional string err_desc = 2;
 }

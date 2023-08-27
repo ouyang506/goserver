@@ -234,7 +234,7 @@ func genGateToken(roleId int64, gateIp string, gatePort int) (string, error) {
 	rkey := fmt.Sprintf(redisutil.RKeyLoginGateToken, token)
 	rvalueMap := map[string]string{
 		"role_id":   strconv.FormatInt(roleId, 10),
-		"gate_id":   gateIp,
+		"gate_ip":   gateIp,
 		"gate_port": strconv.Itoa(gatePort),
 	}
 

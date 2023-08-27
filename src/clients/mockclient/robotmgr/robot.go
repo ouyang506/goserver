@@ -1,8 +1,10 @@
 package robotmgr
 
 import (
+	"common/rpcutil"
 	"fmt"
 	"framework/log"
+	"framework/proto/pb/cs"
 	"mockclient/configmgr"
 	"mockclient/netmgr"
 	"time"
@@ -264,6 +266,26 @@ func (robot *Robot) tickStateLoginGate(e *fsm.Event) {
 
 	netmgr.Instance().RemoveGateStubs()
 	netmgr.Instance().AddGateStub(robot.gateIp, robot.gatePort)
+
+	req := &cs.ReqLoginGate{}
+	resp := &cs.RespLoginGate{}
+	req.RoleId = new(int64)
+	*req.RoleId = robot.roleId
+	req.Token = new(string)
+	*req.Token = robot.token
+	err := rpcutil.ClientCall(req, resp)
+	if err != nil {
+		log.Error("rpc call login gate failed: %v", err)
+		robot.resetStateFrameTime()
+		return
+	}
+
+	if resp.GetErrCode() != 0 {
+		log.Error("rpc call login gate response error code: %v, desc: %v",
+			resp.GetErrCode(), resp.GetErrDesc())
+		robot.resetStateFrameTime()
+		return
+	}
 
 	robot.Event(EventQueryPlayer)
 }

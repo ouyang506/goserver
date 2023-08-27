@@ -1,0 +1,14 @@
+syntax = "proto2";
+package cs;
+
+enum ERROR_CODE{
+  SUCCESS = 0;
+  INVALID_PARAM = 1;
+  DB_FAILED     = 2;
+  UNKOWN        = 3;
+
+  //业务错误码
+  //gate server
+  CHECK_LOGIN_TOKEN_FAILED = 1001;
+  CHECK_LOGIN_GATE_ENDPOINT_FAILED = 1002;
+}

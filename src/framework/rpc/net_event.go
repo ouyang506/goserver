@@ -137,8 +137,11 @@ func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 	msgId := rcvOuterMsg.MsgID
 	log.Debug("NetEvent OnRcvMsg, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
 	switch {
-	case rcvOuterMsg.MsgID <= 0: //客户端发过来的只有rpc请求,没有rpc回复
+	case rcvOuterMsg.MsgID < 0:
 		log.Error("receive wrong message id, sessionId: %d, msgId: %d", c.GetSessionId(), msgId)
+		return
+	case msgId == 0:
+		h.GetOwner().OnRcvResponse(rcvOuterMsg.CallId, rcvOuterMsg.Content)
 		return
 	case rcvOuterMsg.MsgID > 0:
 		reqMsg := rcvOuterMsg.Content
