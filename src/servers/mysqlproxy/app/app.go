@@ -39,7 +39,7 @@ func (app *App) init() bool {
 	logger := log.NewCommonLogger()
 	logger.SetLogLevel(log.LogLevelDebug)
 	logger.AddSink(log.NewStdLogSink())
-	logger.AddSink(log.NewFileLogSink("mysqlproxy", "../../../logs/", log.RotateByHour))
+	logger.AddSink(log.NewFileLogSink("mysqlproxy", "../logs/", log.RotateByHour))
 	logger.Start()
 	log.SetLogger(logger)
 

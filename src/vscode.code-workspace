@@ -40,6 +40,8 @@
 				"request": "launch",
 				"mode": "auto",
 				"program": "${workspaceRoot:mockclient}\\main.go",
+				"output": "../../../bin/__debug_bin_mockclient",
+				"cwd": "../../../bin",
 				"presentation": {
 					"hidden": false,
 					"group": "",
@@ -52,6 +54,8 @@
 				"request": "launch",
 				"mode": "auto",
 				"program": "${workspaceRoot:login}\\main.go",
+				"output": "../../../bin/__debug_bin_login",
+				"cwd": "../../../bin",
 				"presentation": {
 					"hidden": false,
 					"group": "",
@@ -64,6 +68,8 @@
 				"request": "launch",
 				"mode": "auto",
 				"program": "${workspaceRoot:gate}\\main.go",
+				"output": "../../../bin/__debug_bin_gate",
+				"cwd": "../../../bin",
 				"presentation": {
 					"hidden": false,
 					"group": "",
@@ -76,6 +82,8 @@
 				"request": "launch",
 				"mode": "auto",
 				"program": "${workspaceRoot:mysqlproxy}\\main.go",
+				"output": "../../../bin/__debug_bin_mysqlproxy",
+				"cwd": "../../../bin",
 				"presentation": {
 					"hidden": false,
 					"group": "",
@@ -88,6 +96,8 @@
 				"request": "launch",
 				"mode": "auto",
 				"program": "${workspaceRoot:redisproxy}\\main.go",
+				"output": "../../../bin/__debug_bin_redisproxy",
+				"cwd": "../../../bin",
 				"presentation": {
 					"hidden": false,
 					"group": "",

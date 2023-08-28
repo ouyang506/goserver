@@ -28,7 +28,7 @@ type ConfigMgr struct {
 func newConfigMgr() *ConfigMgr {
 	mgr := &ConfigMgr{}
 	conf := newConfig()
-	err := conf.load("../../../conf/mockclient.xml")
+	err := conf.load("../conf/mockclient.xml")
 	if err != nil {
 		fmt.Printf("load config error: %v\n", err)
 	} else {

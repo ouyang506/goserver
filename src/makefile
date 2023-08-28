@@ -5,7 +5,7 @@ all: $(objects)
 
 .PHONY : clean
 clean: 
-	@rm -f ../bin/*
+	$(foreach object, $(objects), rm -f ../bin/$(object);)
 
 .PHONY : utility
 utility:

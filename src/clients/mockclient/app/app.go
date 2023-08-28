@@ -37,7 +37,7 @@ func (app *App) init() bool {
 	//init logger
 	logger := log.NewCommonLogger()
 	logger.AddSink(log.NewStdLogSink())
-	logger.AddSink(log.NewFileLogSink("mockclient", "../../../logs/", log.RotateByHour))
+	logger.AddSink(log.NewFileLogSink("mockclient", "../logs/", log.RotateByHour))
 	logger.Start()
 	log.SetLogger(logger)
 

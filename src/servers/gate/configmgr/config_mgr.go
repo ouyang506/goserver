@@ -22,7 +22,7 @@ func Instance() *ConfigMgr {
 	once.Do(func() {
 		confMgr = newConfigMgr()
 		conf := newConfig()
-		err := conf.load("../../../conf/gate.xml")
+		err := conf.load("../conf/gate.xml")
 		if err != nil {
 			fmt.Printf("load config error: %v", err)
 		} else {
