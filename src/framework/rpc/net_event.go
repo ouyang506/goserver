@@ -98,11 +98,11 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 					log.Error("handler rcv msg panic, msgId: %v, stack : %s", msgId, string(buff[:n]))
 				}
 			}()
-
+			ctx := createContext(h.owner.Context()).SetNetConn(c)
 			if respMsg == nil {
-				method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
+				method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(reqMsg)})
 			} else {
-				method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
+				method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
 
 				respInnerMsg := &InnerMessage{}
 				respInnerMsg.CallId = rcvInnerMsg.CallId
@@ -161,10 +161,11 @@ func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 				}
 			}()
 
+			ctx := createContext(h.owner.Context()).SetNetConn(c)
 			if respMsg == nil {
-				method.Call([]reflect.Value{reflect.ValueOf(reqMsg)})
+				method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(reqMsg)})
 			} else {
-				method.Call([]reflect.Value{reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
+				method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(reqMsg), reflect.ValueOf(respMsg)})
 
 				respOuterMsg := &OuterMessage{}
 				respOuterMsg.CallId = rcvOuterMsg.CallId

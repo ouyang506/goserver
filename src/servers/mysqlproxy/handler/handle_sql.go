@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"framework/log"
 	"framework/proto/pb/ss"
+	"framework/rpc"
 	"mysqlproxy/mysqlmgr"
 )
 
-func (h *MessageHandler) HandleRpcReqExecuteSql(req *ss.ReqExecuteSql, resp *ss.RespExecuteSql) {
+func (h *MessageHandler) HandleRpcReqExecuteSql(ctx rpc.Context, req *ss.ReqExecuteSql, resp *ss.RespExecuteSql) {
 	reqJson, _ := json.Marshal(req)
 	log.Debug("rcv ReqExecuteSql : %s", string(reqJson))
 	defer func() {

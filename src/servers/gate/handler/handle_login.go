@@ -7,11 +7,12 @@ import (
 	"framework/log"
 	"framework/proto/pb"
 	"framework/proto/pb/cs"
+	"framework/rpc"
 	"gate/configmgr"
 	"strconv"
 )
 
-func (h *MessageHandler) HandleRpcReqLoginGate(req *cs.ReqLoginGate, resp *cs.RespLoginGate) {
+func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLoginGate, resp *cs.RespLoginGate) {
 	reqJson, _ := json.Marshal(req)
 	log.Debug("rcv ReqLoginGate: %s", string(reqJson))
 	defer func() {
@@ -77,4 +78,7 @@ func (h *MessageHandler) HandleRpcReqLoginGate(req *cs.ReqLoginGate, resp *cs.Re
 		*resp.ErrDesc = "check gate endpoint failed"
 		return
 	}
+
+	sessionId := ctx.GetNetConn().GetSessionId()
+	log.Info("player login, id = %v, session id = %v", req.GetPlayerId(), sessionId)
 }

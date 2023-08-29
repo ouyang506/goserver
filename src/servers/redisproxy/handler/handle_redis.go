@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"framework/log"
 	"framework/proto/pb/ss"
+	"framework/rpc"
 	"redisproxy/redismgr"
 )
 
-func (h *MessageHandler) HandleRpcReqRedisCmd(req *ss.ReqRedisCmd, resp *ss.RespRedisCmd) {
+func (h *MessageHandler) HandleRpcReqRedisCmd(ctx rpc.Context, req *ss.ReqRedisCmd, resp *ss.RespRedisCmd) {
 	reqJson, _ := json.Marshal(req)
 	log.Debug("rcv ReqRedisCmd : %s", string(reqJson))
 	defer func() {
@@ -41,5 +42,5 @@ func (h *MessageHandler) HandleRpcReqRedisCmd(req *ss.ReqRedisCmd, resp *ss.Resp
 }
 
 // TODO implement
-func (h *MessageHandler) HandleRpcReqRedisEval(req *ss.ReqRedisEval, resp *ss.RespRedisEval) {
+func (h *MessageHandler) HandleRpcReqRedisEval(ctx rpc.Context, req *ss.ReqRedisEval, resp *ss.RespRedisEval) {
 }

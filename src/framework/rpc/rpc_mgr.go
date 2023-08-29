@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"framework/log"
 	"framework/network"
 	"framework/proto/pb"
@@ -14,6 +15,9 @@ import (
 
 // RPC管理器(thread safe)
 type RpcManager struct {
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+
 	netcore      network.NetworkCore
 	rpcStubMgr   *RpcStubManger
 	msgHandleMap map[int]reflect.Value
@@ -25,6 +29,7 @@ func NewRpcManager(mode RpcModeType, msgHandler any,
 	options ...Option) *RpcManager {
 
 	mgr := &RpcManager{}
+	mgr.ctx, mgr.ctxCancel = context.WithCancel(context.TODO())
 
 	ops := LoadOptions(options...)
 
@@ -87,6 +92,10 @@ func (mgr *RpcManager) initMsgHandler(handler any) {
 	methodCount := refType.NumMethod()
 	for i := 0; i < methodCount; i++ {
 		method := refType.Method(i)
+		if !method.IsExported() {
+			continue
+		}
+
 		methodName := method.Name
 		if !strings.HasPrefix(methodName, RpcHandlerMethodPrefix) {
 			continue
@@ -106,38 +115,50 @@ func (mgr *RpcManager) initMsgHandler(handler any) {
 			continue
 		}
 
-		//第一个参数为结构体self
-		//参数个数为2表示rpc notify，为3表示有返回的rpc
+		//第1个参数为结构体self
+		//第2个参数为rpc.Context
+		//第3个参数为ReqMessage
+		//第4个参数为RespMessage，如果为通知类型rpc则没有第4个参数
 		numIn := methodType.NumIn()
-		if numIn != 2 && numIn != 3 {
+		if numIn != 3 && numIn != 4 {
 			continue
 		}
 
 		reqMsg, respMsg := pb.GetProtoMsgById(reqMsgId)
-		if (respMsg == nil && numIn != 2) || (respMsg != nil && numIn != 3) {
+		if (respMsg == nil && numIn != 3) || (respMsg != nil && numIn != 4) {
 			log.Warn("method %v param count error", methodName)
 			continue
 		}
 
-		if numIn == 2 {
-			if methodType.In(1) != reflect.TypeOf(reqMsg) {
+		if methodType.In(1) != reflect.TypeOf((*Context)(nil)).Elem() {
+			log.Warn("method %v param type error", methodName)
+			continue
+		}
+
+		if numIn == 3 {
+			if methodType.In(2) != reflect.TypeOf(reqMsg) {
 				log.Warn("method %v param type error", methodName)
 				continue
 			}
-		} else if numIn == 3 {
-			if methodType.In(1) != reflect.TypeOf(reqMsg) {
+		} else if numIn == 4 {
+			if methodType.In(2) != reflect.TypeOf(reqMsg) {
 				log.Warn("method %v param type error", methodName)
 				continue
 			}
-			if methodType.In(2) != reflect.TypeOf(respMsg) {
+			if methodType.In(3) != reflect.TypeOf(respMsg) {
 				log.Warn("method %v param type error", methodName)
 				continue
 			}
 		}
 
 		methodMap[reqMsgId] = refValue.Method(i)
+		log.Debug("rpc message handle method, %v => %v", reqMsgId, methodName)
 	}
 	mgr.msgHandleMap = methodMap
+}
+
+func (mgr *RpcManager) Context() context.Context {
+	return mgr.ctx
 }
 
 // 通过消息获取处理函数

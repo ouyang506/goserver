@@ -28,5 +28,6 @@ start /b cmd /c .\\etcd\\etcd-v3.5.1\\etcd.exe --name infra3 ^
   --initial-cluster infra1=http://127.0.0.1:2381,infra2=http://127.0.0.1:2382,infra3=http://127.0.0.1:2383 ^
   --initial-cluster-state new
   
-
-start /b cmd /c .\\redis\\Redis-x64-3.0.504\\redis-server.exe
+cd .\\data\\redis
+start /b cmd /c ..\\..\\redis\\Redis-x64-3.0.504\\redis-server.exe
+cd ..\\..\\
