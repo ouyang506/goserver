@@ -44,9 +44,9 @@ func NewFSM(initialSate string, trans []EventTransition,
 		case strings.HasPrefix(k, "tick_"): // tick by update called
 			cbState = strings.TrimPrefix(k, "tick_")
 			cbType = CbTypeTickState
-		default:
+		case k == "change_state":
 			cbState = ""
-			cbType = CbTypeNone
+			cbType = CbTypeChangeState
 		}
 
 		if cbType != CbTypeNone {
@@ -87,7 +87,12 @@ func (fsm *FSM) Event(event string, extParam ...any) {
 		ExtParam: extParam,
 	}
 
-	cb, ok := fsm.callbacks[CallbackKey{CbTypeLeaveState, e.Src}]
+	cb, ok := fsm.callbacks[CallbackKey{CbTypeChangeState, ""}]
+	if ok {
+		cb(e)
+	}
+
+	cb, ok = fsm.callbacks[CallbackKey{CbTypeLeaveState, e.Src}]
 	if ok {
 		cb(e)
 	}

@@ -64,6 +64,7 @@ func newRobot() *Robot {
 			{Name: EventQueryPlayer, Src: []string{StateLoginGate}, Dst: StateQueryPlayer},
 		},
 		map[string]fsm.Callback{
+			"change_state":               robot.ChangeState,
 			"tick_" + StateLogout:        robot.tickStateLogout,
 			"tick_" + StateLoginAccount:  robot.tickStateLoginAccount,
 			"tick_" + StateCreateAccount: robot.tickStateCreateAccount,
@@ -97,6 +98,10 @@ func (robot *Robot) Update() {
 	}
 
 	robot.fsm.Update()
+}
+func (robot *Robot) ChangeState(e *fsm.Event) {
+	log.Info("robot fsm change state, event = %v, source = %v, dest = %v",
+		e.Name, e.Src, e.Dst)
 }
 
 func (robot *Robot) Event(event string) {
