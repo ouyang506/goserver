@@ -59,7 +59,7 @@ type LoginAccountResp struct {
 	GateIp   string `json:"gate_ip"`
 	GatePort int    `json:"gate_port"`
 	Token    string `json:"token"`
-	RoleId   int64  `json:"role_id"`
+	PlayerId int64  `json:"player_id"`
 }
 
 func loginAccount(url string, username string, password string) (*LoginAccountResp, error) {
@@ -93,23 +93,23 @@ func loginAccount(url string, username string, password string) (*LoginAccountRe
 	return loginResp, nil
 }
 
-type CreateRoleReq struct {
+type CreatePlayerReq struct {
 	UserName string `json:"username"`
 	Password string `json:"password"`
 	Nickname string `json:"nickname"`
 }
 
-type CreateRoleResp struct {
+type CreatePlayerResp struct {
 	ErrCode  int    `json:"error_code"`
 	ErrDesc  string `json:"error_desc"`
 	GateIp   string `json:"gate_ip"`
 	GatePort int    `json:"gate_port"`
 	Token    string `json:"token"`
-	RoleId   int64  `json:"role_id"`
+	PlayerId int64  `json:"player_id"`
 }
 
-func createRole(url string, username string, password string, nickname string) (*CreateRoleResp, error) {
-	createReq := CreateRoleReq{}
+func createPlayer(url string, username string, password string, nickname string) (*CreatePlayerResp, error) {
+	createReq := CreatePlayerReq{}
 	createReq.UserName = username
 	createReq.Password = password
 	createReq.Nickname = nickname
@@ -131,7 +131,7 @@ func createRole(url string, username string, password string, nickname string) (
 	if err != nil {
 		return nil, err
 	}
-	createResp := &CreateRoleResp{}
+	createResp := &CreatePlayerResp{}
 	err = json.Unmarshal(respData, createResp)
 	if err != nil {
 		return nil, err

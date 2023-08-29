@@ -19,9 +19,10 @@ func (h *MessageHandler) HandleRpcReqLoginGate(req *cs.ReqLoginGate, resp *cs.Re
 		log.Debug("response RespLoginGate: %s", string(respJson))
 	}()
 
-	roleId := req.GetRoleId()
+	playerId := req.GetPlayerId()
+	strPlayerId := strconv.FormatInt(playerId, 10)
 	token := req.GetToken()
-	rkey := fmt.Sprintf(redisutil.RKeyLoginGateToken, token)
+	rkey := fmt.Sprintf(redisutil.RKeyLoginGateToken, strPlayerId)
 	rvalue, err := redisutil.Get(rkey)
 	if err != nil {
 		log.Error("query login token from redis error: %v", err)
@@ -33,7 +34,7 @@ func (h *MessageHandler) HandleRpcReqLoginGate(req *cs.ReqLoginGate, resp *cs.Re
 	}
 
 	if rvalue == "" {
-		log.Error("token not found, roleId= %v", roleId)
+		log.Error("token not found, playerId= %v", playerId)
 		resp.ErrCode = new(int32)
 		*resp.ErrCode = int32(pb.ERROR_CODE_CHECK_LOGIN_TOKEN_FAILED)
 		resp.ErrDesc = new(string)
@@ -52,8 +53,8 @@ func (h *MessageHandler) HandleRpcReqLoginGate(req *cs.ReqLoginGate, resp *cs.Re
 		return
 	}
 
-	strRoleId, _ := rvalueMap["role_id"]
-	if strRoleId != strconv.FormatInt(roleId, 10) {
+	savedToken, ok := rvalueMap["token"]
+	if !ok || token != savedToken {
 		log.Error("token not match, value= %v", rvalue)
 		resp.ErrCode = new(int32)
 		*resp.ErrCode = int32(pb.ERROR_CODE_CHECK_LOGIN_TOKEN_FAILED)
@@ -66,8 +67,8 @@ func (h *MessageHandler) HandleRpcReqLoginGate(req *cs.ReqLoginGate, resp *cs.Re
 	conf := configmgr.Instance().GetConfig()
 	outerIp := conf.Outer.OuterIp
 	outerPort := conf.Outer.Port
-	strGateIp, _ := rvalueMap["gate_ip"]
-	strGatePort, _ := rvalueMap["gate_port"]
+	strGateIp := rvalueMap["gate_ip"]
+	strGatePort := rvalueMap["gate_port"]
 	if strGateIp != outerIp || strGatePort != strconv.Itoa(outerPort) {
 		log.Error("gate endpoint not match, value= %v", rvalue)
 		resp.ErrCode = new(int32)

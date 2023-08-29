@@ -1,0 +1,22 @@
+CREATE TABLE `t_account` (
+	`id` BIGINT(19) NOT NULL AUTO_INCREMENT,
+	`username` VARCHAR(64) NOT NULL DEFAULT '' COLLATE 'utf8mb4_general_ci',
+	`passwd` VARCHAR(64) NOT NULL DEFAULT '' COLLATE 'utf8mb4_general_ci',
+	PRIMARY KEY (`id`) USING BTREE,
+	UNIQUE INDEX `uidx_username` (`username`) USING BTREE
+)
+COLLATE='utf8mb4_general_ci'
+ENGINE=InnoDB
+;
+
+CREATE TABLE `t_player` (
+	`id` BIGINT(19) NOT NULL AUTO_INCREMENT,
+	`account` VARCHAR(64) NOT NULL DEFAULT '' COLLATE 'utf8mb4_general_ci',
+	`nickname` VARCHAR(64) NOT NULL DEFAULT '' COLLATE 'utf8mb4_general_ci',
+	PRIMARY KEY (`id`) USING BTREE,
+	UNIQUE INDEX `uidx_nickname` (`nickname`) USING BTREE,
+	UNIQUE INDEX `uidx_account` (`account`) USING BTREE
+)
+COLLATE='utf8mb4_general_ci'
+ENGINE=InnoDB
+;

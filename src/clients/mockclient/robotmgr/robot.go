@@ -19,7 +19,7 @@ const (
 	StateLogout        = "state_logout"
 	StateLoginAccount  = "state_login_account"
 	StateCreateAccount = "state_create_account"
-	StateCreateRole    = "state_create_role"
+	StateCreatePlayer  = "state_create_player"
 	StateLoginGate     = "state_login_gate"
 	StateQueryPlayer   = "state_query_player"
 )
@@ -29,7 +29,7 @@ const (
 	EventLogout         = "event_logout"
 	EventLoginAccount   = "event_login_account"
 	EventCreateAccount  = "event_create_account"
-	EventCreateRole     = "event_create_role"
+	EventCreatePlayer   = "event_create_player"
 	EventLoginGate      = "event_login_gate"
 	EventQueryPlayer    = "event_query_player"
 	EventGateDisconnect = "event_get_disconnect"
@@ -50,7 +50,7 @@ type Robot struct {
 	gateIp   string
 	gatePort int
 	token    string
-	roleId   int64
+	playerId int64
 }
 
 func newRobot() *Robot {
@@ -59,8 +59,8 @@ func newRobot() *Robot {
 		[]fsm.EventTransition{
 			{Name: EventLoginAccount, Src: []string{StateLogout}, Dst: StateLoginAccount},
 			{Name: EventCreateAccount, Src: []string{StateLoginAccount}, Dst: StateCreateAccount},
-			{Name: EventCreateRole, Src: []string{StateLoginAccount, StateCreateAccount}, Dst: StateCreateRole},
-			{Name: EventLoginGate, Src: []string{StateLoginAccount, StateCreateRole}, Dst: StateLoginGate},
+			{Name: EventCreatePlayer, Src: []string{StateLoginAccount, StateCreateAccount}, Dst: StateCreatePlayer},
+			{Name: EventLoginGate, Src: []string{StateLoginAccount, StateCreatePlayer}, Dst: StateLoginGate},
 			{Name: EventQueryPlayer, Src: []string{StateLoginGate}, Dst: StateQueryPlayer},
 		},
 		map[string]fsm.Callback{
@@ -68,7 +68,7 @@ func newRobot() *Robot {
 			"tick_" + StateLogout:        robot.tickStateLogout,
 			"tick_" + StateLoginAccount:  robot.tickStateLoginAccount,
 			"tick_" + StateCreateAccount: robot.tickStateCreateAccount,
-			"tick_" + StateCreateRole:    robot.tickStateCreateRole,
+			"tick_" + StateCreatePlayer:  robot.tickStateCreatePlayer,
 			"tick_" + StateLoginGate:     robot.tickStateLoginGate,
 			"tick_" + StateQueryPlayer:   robot.tickStateQueryPlayer,
 		})
@@ -82,7 +82,7 @@ func (robot *Robot) Reset() {
 	robot.gateIp = ""
 	robot.gatePort = 0
 	robot.token = ""
-	robot.roleId = 0
+	robot.playerId = 0
 }
 
 // run in one goroutine
@@ -178,15 +178,15 @@ func (robot *Robot) tickStateLoginAccount(e *fsm.Event) {
 	}
 
 	// 没有角色则创建角色
-	if loginAccountResp.RoleId == 0 {
-		robot.Event(EventCreateRole)
+	if loginAccountResp.PlayerId == 0 {
+		robot.Event(EventCreatePlayer)
 		return
 	}
 
 	robot.gateIp = loginAccountResp.GateIp
 	robot.gatePort = loginAccountResp.GatePort
 	robot.token = loginAccountResp.Token
-	robot.roleId = loginAccountResp.RoleId
+	robot.playerId = loginAccountResp.PlayerId
 	robot.Event(EventLoginGate)
 }
 
@@ -207,24 +207,24 @@ func (robot *Robot) tickStateCreateAccount(e *fsm.Event) {
 	ip := conf.LoginServers.LoginServer[idx].IP
 	port := conf.LoginServers.LoginServer[idx].Port
 	url := fmt.Sprintf("http://%s:%d/account/create", ip, port)
-	createAccountResp, err := createAccount(url, RobotUsername, RobotPassword)
+	resp, err := createAccount(url, RobotUsername, RobotPassword)
 	if err != nil {
 		log.Error("create account error: %s", err)
 		robot.resetStateFrameTime()
 		return
 	}
 
-	if createAccountResp.ErrCode != 0 {
-		log.Error("create account resp error code: %v, desc: %v", createAccountResp.ErrCode,
-			createAccountResp.ErrDesc)
+	if resp.ErrCode != 0 {
+		log.Error("create account resp error code: %v, desc: %v", resp.ErrCode,
+			resp.ErrDesc)
 		robot.resetStateFrameTime()
 		return
 	}
-	robot.Event(EventCreateRole)
+	robot.Event(EventCreatePlayer)
 }
 
 // 创建角色
-func (robot *Robot) tickStateCreateRole(e *fsm.Event) {
+func (robot *Robot) tickStateCreatePlayer(e *fsm.Event) {
 	if !robot.checkStateFrameTime(500) {
 		return
 	}
@@ -239,25 +239,25 @@ func (robot *Robot) tickStateCreateRole(e *fsm.Event) {
 	idx := rand.Int() % len(conf.LoginServers.LoginServer)
 	ip := conf.LoginServers.LoginServer[idx].IP
 	port := conf.LoginServers.LoginServer[idx].Port
-	url := fmt.Sprintf("http://%s:%d/role/create", ip, port)
-	createRoleResp, err := createRole(url, RobotUsername, RobotPassword, RobotNickname)
+	url := fmt.Sprintf("http://%s:%d/player/create", ip, port)
+	resp, err := createPlayer(url, RobotUsername, RobotPassword, RobotNickname)
 	if err != nil {
-		log.Error("create role error: %s", err)
+		log.Error("create player error: %s", err)
 		robot.resetStateFrameTime()
 		return
 	}
 
-	if createRoleResp.ErrCode != 0 {
-		log.Error("create role resp error code: %v, desc: %v", createRoleResp.ErrCode,
-			createRoleResp.ErrDesc)
+	if resp.ErrCode != 0 {
+		log.Error("create player resp error code: %v, desc: %v", resp.ErrCode,
+			resp.ErrDesc)
 		robot.resetStateFrameTime()
 		return
 	}
 
-	robot.gateIp = createRoleResp.GateIp
-	robot.gatePort = createRoleResp.GatePort
-	robot.token = createRoleResp.Token
-	robot.roleId = createRoleResp.RoleId
+	robot.gateIp = resp.GateIp
+	robot.gatePort = resp.GatePort
+	robot.token = resp.Token
+	robot.playerId = resp.PlayerId
 	robot.Event(EventLoginGate)
 }
 
@@ -274,8 +274,8 @@ func (robot *Robot) tickStateLoginGate(e *fsm.Event) {
 
 	req := &cs.ReqLoginGate{}
 	resp := &cs.RespLoginGate{}
-	req.RoleId = new(int64)
-	*req.RoleId = robot.roleId
+	req.PlayerId = new(int64)
+	*req.PlayerId = robot.playerId
 	req.Token = new(string)
 	*req.Token = robot.token
 	err := rpcutil.ClientCall(req, resp)

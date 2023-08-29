@@ -20,8 +20,8 @@ message resp_heart_beat{
 
 //登录gateway请求
 message req_login_gate{
-  optional int64  role_id = 1;
-  optional string token   = 2;
+  optional int64  player_id = 1;
+  optional string token     = 2;
 }
 
 //登录gateway返回

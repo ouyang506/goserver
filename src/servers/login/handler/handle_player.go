@@ -9,25 +9,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type CreateRoleReq struct {
+type CreatePlayerReq struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Nickname string `json:"nickname"`
 }
 
-type CreateRoleResp struct {
+type CreatePlayerResp struct {
 	ErrCode  int    `json:"error_code"`
 	ErrDesc  string `json:"error_desc"`
 	GateIp   string `json:"gate_ip"`
 	GatePort int    `json:"gate_port"`
 	Token    string `json:"token"`
-	RoleId   int64  `json:"role_id"`
+	PlayerId int64  `json:"player_id"`
 }
 
 // 创建角色
-func handleCreateRole(c *gin.Context) {
-	req := &CreateRoleReq{}
-	resp := &CreateRoleResp{}
+func handleCreatePlayer(c *gin.Context) {
+	req := &CreatePlayerReq{}
+	resp := &CreatePlayerResp{}
 
 	// unmarshal request
 	err := c.BindJSON(req)
@@ -39,10 +39,10 @@ func handleCreateRole(c *gin.Context) {
 	}
 
 	reqJson, _ := json.Marshal(req)
-	log.Debug("rcv create role : %s", string(reqJson))
+	log.Debug("rcv create player : %s", string(reqJson))
 	defer func() {
 		respJson, _ := json.Marshal(resp)
-		log.Debug("response create role : %s", string(respJson))
+		log.Debug("response create player : %s", string(respJson))
 	}()
 
 	if req.Nickname == "" || len(req.Nickname) > 64 {
@@ -53,7 +53,7 @@ func handleCreateRole(c *gin.Context) {
 	}
 
 	// check username and passwd
-	row, err := mysqlutil.QueryOne("select passwd from account where username=?", req.Username)
+	row, err := mysqlutil.QueryOne("select passwd from t_account where username=?", req.Username)
 	if err != nil {
 		log.Error("query account error: %v", err)
 		resp.ErrCode = ErrCodeDBFailed
@@ -69,9 +69,9 @@ func handleCreateRole(c *gin.Context) {
 		return
 	}
 
-	row, err = mysqlutil.QueryOne("select id from role where nickname=?", req.Nickname)
+	row, err = mysqlutil.QueryOne("select id from t_player where nickname=?", req.Nickname)
 	if err != nil {
-		log.Error("query role error: %v", err)
+		log.Error("query player error: %v", err)
 		resp.ErrCode = ErrCodeDBFailed
 		resp.ErrDesc = ErrDescDBFailed
 		c.JSON(http.StatusOK, resp)
@@ -85,17 +85,17 @@ func handleCreateRole(c *gin.Context) {
 		return
 	}
 
-	lastInsertId, _, err := mysqlutil.Execute("insert into role(account,nickname) values(?,?)",
+	lastInsertId, _, err := mysqlutil.Execute("insert into t_player(account,nickname) values(?,?)",
 		req.Username, req.Nickname)
 	if err != nil {
-		log.Error("insert role error: %v", err)
+		log.Error("insert player error: %v", err)
 		resp.ErrCode = ErrCodeDBFailed
 		resp.ErrDesc = ErrDescDBFailed
 		c.JSON(http.StatusOK, resp)
 		return
 	}
 
-	roleId := lastInsertId
+	playerId := lastInsertId
 
 	token := ""
 	gateIp := ""
@@ -119,7 +119,7 @@ func handleCreateRole(c *gin.Context) {
 	}
 
 	// 存在创角，生成登录gate的token
-	token, err = genGateToken(roleId, gateIp, gatePort)
+	token, err = genGateToken(playerId, gateIp, gatePort)
 	if err != nil {
 		log.Error("generate gate token failed, %v", err)
 		resp.ErrCode = ErrCodeDBFailed
@@ -131,6 +131,6 @@ func handleCreateRole(c *gin.Context) {
 	resp.GateIp = gateIp
 	resp.GatePort = gatePort
 	resp.Token = token
-	resp.RoleId = roleId
+	resp.PlayerId = playerId
 	c.JSON(http.StatusOK, resp)
 }

@@ -154,6 +154,11 @@ func (mgr *RpcManager) TcpListen(ip string, port int) error {
 	return mgr.rpcStubMgr.netcore.TcpListen(ip, port)
 }
 
+// 关闭连接
+func (mgr *RpcManager) TcpClose(sessionId int64) error {
+	return mgr.rpcStubMgr.netcore.TcpClose(sessionId)
+}
+
 // 发送网络消息
 func (mgr *RpcManager) TcpSendMsg(connSessionId int64, msg any) error {
 	err := mgr.rpcStubMgr.netcore.TcpSendMsg(connSessionId, msg)

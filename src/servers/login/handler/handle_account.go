@@ -36,7 +36,7 @@ type LoginAccountResp struct {
 	GateIp   string `json:"gate_ip"`
 	GatePort int    `json:"gate_port"`
 	Token    string `json:"token"`
-	RoleId   int64  `json:"role_id"`
+	PlayerId int64  `json:"player_id"`
 }
 
 // 创建账号
@@ -66,7 +66,7 @@ func handlerCreateAccount(c *gin.Context) {
 		c.JSON(http.StatusOK, resp)
 		return
 	}
-	row, err := mysqlutil.QueryOne("select id from account where username=?", req.Username)
+	row, err := mysqlutil.QueryOne("select id from t_account where username=?", req.Username)
 	if err != nil {
 		log.Error("query account error: %v", err)
 		resp.ErrCode = ErrCodeDBFailed
@@ -82,7 +82,7 @@ func handlerCreateAccount(c *gin.Context) {
 		return
 	}
 
-	_, _, err = mysqlutil.Execute("insert into account(username, passwd) values(?,?)",
+	_, _, err = mysqlutil.Execute("insert into t_account(username, passwd) values(?,?)",
 		req.Username, req.Password)
 	if err != nil {
 		log.Error("insert account error: %v", err)
@@ -117,7 +117,7 @@ func handleLoginAccount(c *gin.Context) {
 	}()
 
 	// check username and passwd
-	row, err := mysqlutil.QueryOne("select passwd from account where username=?", req.Username)
+	row, err := mysqlutil.QueryOne("select passwd from t_account where username=?", req.Username)
 	if err != nil {
 		log.Error("query account error: %v", err)
 		resp.ErrCode = ErrCodeDBFailed
@@ -133,26 +133,26 @@ func handleLoginAccount(c *gin.Context) {
 		return
 	}
 
-	// query role id if has created the role
-	row, err = mysqlutil.QueryOne("select id, nickname from role where account = ?", req.Username)
+	// query player id if has created the player
+	row, err = mysqlutil.QueryOne("select id, nickname from t_player where account = ?", req.Username)
 	if err != nil {
-		log.Error("query role error: %v", err)
+		log.Error("query player error: %v", err)
 		resp.ErrCode = ErrCodeDBFailed
 		resp.ErrDesc = ErrDescDBFailed
 		c.JSON(http.StatusOK, resp)
 		return
 	}
 
-	roleId := int64(0)
+	playerId := int64(0)
 	if row != nil {
-		roleId = row.FieldInt64("id")
+		playerId = row.FieldInt64("id")
 	}
 
 	token := ""
 	gateIp := ""
 	gatePort := 0
 
-	if roleId > 0 {
+	if playerId > 0 {
 		// 存在创角，选择一个gate地址供客户端连接
 		gateIp, gatePort, err = fetchOneGate()
 		if err != nil {
@@ -172,7 +172,7 @@ func handleLoginAccount(c *gin.Context) {
 		}
 
 		// 存在创角，生成登录gate的token
-		token, err = genGateToken(roleId, gateIp, gatePort)
+		token, err = genGateToken(playerId, gateIp, gatePort)
 		if err != nil {
 			log.Error("generate gate token failed failed, %v", err)
 			resp.ErrCode = ErrCodeDBFailed
@@ -185,7 +185,7 @@ func handleLoginAccount(c *gin.Context) {
 	resp.GateIp = gateIp
 	resp.GatePort = gatePort
 	resp.Token = token
-	resp.RoleId = roleId
+	resp.PlayerId = playerId
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -228,12 +228,13 @@ func fetchOneGate() (string, int, error) {
 	return gateIp, gatePort, nil
 }
 
-func genGateToken(roleId int64, gateIp string, gatePort int) (string, error) {
+func genGateToken(playerId int64, gateIp string, gatePort int) (string, error) {
 	//TODO: random a string for token
 	token := strconv.FormatInt(rand.Int63(), 32)
-	rkey := fmt.Sprintf(redisutil.RKeyLoginGateToken, token)
+	strPlayerId := strconv.FormatInt(playerId, 10)
+	rkey := fmt.Sprintf(redisutil.RKeyLoginGateToken, strPlayerId)
 	rvalueMap := map[string]string{
-		"role_id":   strconv.FormatInt(roleId, 10),
+		"token":     token,
 		"gate_ip":   gateIp,
 		"gate_port": strconv.Itoa(gatePort),
 	}

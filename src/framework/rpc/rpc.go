@@ -127,6 +127,15 @@ func TcpListen(mode RpcModeType, ip string, port int) error {
 	return rpcMgr.TcpListen(ip, port)
 }
 
+// 关闭连接
+func TcpClose(mode RpcModeType, sessionId int64) error {
+	rpcMgr := GetRpcManager(mode)
+	if rpcMgr == nil {
+		return ErrorRpcMgrNotFound
+	}
+	return rpcMgr.TcpClose(sessionId)
+}
+
 // 获取注册中心服务以及监听服务变化事件
 func FetchWatchService(mode RpcModeType, reg registry.Registry) error {
 	rpcMgr := GetRpcManager(mode)

@@ -27,5 +27,5 @@ const (
 func RegHttpHandler(engine *gin.Engine) {
 	engine.POST("/account/create", handlerCreateAccount)
 	engine.POST("/account/login", handleLoginAccount)
-	engine.POST("/role/create", handleCreateRole)
+	engine.POST("/player/create", handleCreatePlayer)
 }
