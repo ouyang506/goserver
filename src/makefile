@@ -7,6 +7,11 @@ all: $(objects)
 clean: 
 	$(foreach object, $(objects), rm -f ../bin/$(object);)
 
+.PHONY : proto
+proto:
+	@cd framework/proto/idl &&\
+	./proto_gen.bat
+
 .PHONY : utility
 utility:
 	@echo "build module utility"
@@ -19,36 +24,42 @@ common: utility
 	@cd common && \
 	go mod tidy
 
+.PHONY : framework
+framework: utility  common
+	@echo "build module framework"
+	@cd framework && \
+	go mod tidy
+
 .PHONY : mockclient
-mockclient: common
+mockclient: utility  common  framework
 	@echo "build mockclient"
 	@cd clients/mockclient && \
 	go mod tidy	&& \
 	go build -o ../../../bin/
 	
 .PHONY : login
-login: common
+login: utility  common  framework
 	@echo "build server login"
 	@cd servers/login && \
 	go mod tidy	&& \
 	go build -o ../../../bin/
 	
 .PHONY : gate
-gate: common
+gate: utility  common  framework
 	@echo "build server gate"
 	@cd servers/gate && \
 	go mod tidy	&& \
 	go build -o ../../../bin/
 	
 .PHONY : mysqlproxy
-mysqlproxy: common
+mysqlproxy: utility  common  framework
 	@echo "build server mysqlproxy"
 	@cd servers/mysqlproxy && \
 	go mod tidy	&& \
 	go build -o ../../../bin/
 	
 .PHONY : redisproxy
-redisproxy: common
+redisproxy: utility  common  framework
 	@echo "build server redisproxy"
 	@cd servers/redisproxy && \
 	go mod tidy	&& \

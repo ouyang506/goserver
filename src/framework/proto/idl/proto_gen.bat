@@ -22,5 +22,5 @@ cd ../../../../tools/proto_parser
 proto_parser
 cd %pwd%
 
-pause
+rem pause
 exit
