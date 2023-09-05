@@ -34,12 +34,16 @@ type Connection interface {
 	IsClient() bool
 	GetState() ConnState
 	CasState(oldState ConnState, newState ConnState) bool
+	SetForceClose()
+	IsForceClose() bool
 	GetSendBuff() *ringbuffer.RingBuffer
 	GetRcvBuff() *ringbuffer.RingBuffer
-	SetAttrib(k interface{}, v interface{})
-	GetAttrib(k interface{}) (interface{}, bool)
+	SetAttrib(k any, v any)
+	GetAttrib(k any) (any, bool)
+	DelAttrib(k any)
 }
 
+// TODO：这里的方法需要整理下
 type BaseConn struct {
 	sessionId int64
 
@@ -52,6 +56,7 @@ type BaseConn struct {
 	isClient       bool
 	autoReconnect  bool
 	lastTryConTime int64
+	isForceClose   atomic.Bool
 
 	sendBuff *ringbuffer.RingBuffer
 	rcvBuff  *ringbuffer.RingBuffer
@@ -75,6 +80,13 @@ func (c *BaseConn) IsClient() bool {
 	return c.isClient
 }
 
+func (c *BaseConn) SetForceClose() {
+	c.isForceClose.Store(true)
+}
+func (c *BaseConn) IsForceClose() bool {
+	return c.isForceClose.Load()
+}
+
 func (c *BaseConn) GetState() ConnState {
 	return ConnState(atomic.LoadInt32(&c.state))
 }
@@ -95,10 +107,14 @@ func (c *BaseConn) GetRcvBuff() *ringbuffer.RingBuffer {
 	return c.rcvBuff
 }
 
-func (c *BaseConn) SetAttrib(k interface{}, v interface{}) {
+func (c *BaseConn) SetAttrib(k any, v any) {
 	c.attrMap.Store(k, v)
 }
 
-func (c *BaseConn) GetAttrib(k interface{}) (interface{}, bool) {
+func (c *BaseConn) GetAttrib(k any) (any, bool) {
 	return c.attrMap.Load(k)
+}
+
+func (c *BaseConn) DelAttrib(k any) {
+	c.attrMap.Delete(k)
 }

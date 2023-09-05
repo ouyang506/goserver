@@ -6,6 +6,8 @@ import (
 	"framework/rpc"
 )
 
+type NetAttrPlayer struct{}
+
 // 网络事件回调
 type ClientNetEventHandler struct {
 	rpc.OuterNetEventHandler

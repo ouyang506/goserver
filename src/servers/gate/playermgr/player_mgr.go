@@ -2,7 +2,6 @@ package playermgr
 
 import (
 	"framework/log"
-	"framework/rpc"
 	"sync"
 )
 
@@ -30,24 +29,18 @@ func newPlayerMgr() *PlayerMgr {
 	return mgr
 }
 
-func (mgr *PlayerMgr) AddPlayer(player *Player) {
-	if player == nil {
-		log.Error("player is nil")
-		return
-	}
-	log.Info("add player to map, playerId=%v, netSessionId=%v",
-		player.GetId(), player.GetNetSessionId())
-
+func (mgr *PlayerMgr) LoadAndStorePlayer(playerId int64, player *Player) *Player {
 	mgr.playerMu.Lock()
 	defer mgr.playerMu.Unlock()
 
-	oldPlayer, ok := mgr.playerMap[player.GetId()]
-	if ok {
-		log.Info("add player to map but player has been existed, playerId=%v, netSessionId=%v",
-			player.GetId(), player.GetNetSessionId())
-		rpc.TcpClose(rpc.RpcModeOuter, oldPlayer.GetNetSessionId())
-	}
+	oldPlayer, ok := mgr.playerMap[playerId]
 	mgr.playerMap[player.GetId()] = player
+	log.Info("add player to map, playerId=%v", playerId)
+	if ok {
+		return oldPlayer
+	} else {
+		return nil
+	}
 }
 
 func (mgr *PlayerMgr) RemovePlayer(playerId int64) {
@@ -67,4 +60,26 @@ func (mgr *PlayerMgr) GetPlayer(playerId int64) *Player {
 		return nil
 	}
 	return player
+}
+
+func (mgr *PlayerMgr) OnDisconnect(playerId int64) {
+	mgr.playerMu.RLock()
+	defer mgr.playerMu.RUnlock()
+
+	player, ok := mgr.playerMap[playerId]
+	if !ok {
+		log.Error("network disconnected, but player not found, playerId=%v", playerId)
+		return
+	}
+
+	delete(mgr.playerMap, playerId)
+	mgr.OnLogout(player)
+}
+
+func (mgr *PlayerMgr) OnLogin(player *Player) {
+	log.Info("player login, playerId=%v", player.GetId())
+}
+
+func (mgr *PlayerMgr) OnLogout(player *Player) {
+	log.Info("player logout, playerId=%v", player.GetId())
 }

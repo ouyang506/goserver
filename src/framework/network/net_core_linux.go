@@ -144,6 +144,9 @@ func (netcore *NetPollCore) startWaitConnTimer() {
 func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 	netcore.waitConnMap.Range(func(key, value interface{}) bool {
 		conn := value.(*NetConn)
+		if conn.IsForceClose() {
+			return true
+		}
 		if t.Unix()-conn.lastTryConTime < int64(RECONNECT_DELTA_TIME_SEC) {
 			return true
 		}
@@ -159,7 +162,9 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 		taskFunc := func(param interface{}) error {
 			poll := param.([]interface{})[0].(*Poll)
 			conn := param.([]interface{})[1].(*NetConn)
-
+			if conn.IsForceClose() {
+				return nil
+			}
 			err := poll.tcpConnect(conn)
 			if err != nil {
 				if err != unix.EINPROGRESS {
@@ -246,6 +251,8 @@ func (netcore *NetPollCore) TcpSendMsg(sessionId int64, msg interface{}) error {
 
 // implement network core TcpClose
 func (netcore *NetPollCore) TcpClose(sessionId int64) error {
+	netcore.waitConnMap.Delete(sessionId)
+
 	pollIndex := netcore.loadBalance.GetConnection(sessionId)
 	if pollIndex < 0 {
 		log.Error("TcpClose connection poll not found, sessionId:%v", sessionId)
@@ -842,9 +849,19 @@ func (poll *Poll) close(fd int) {
 		}
 	}
 
-	if conn.IsClient() && conn.autoReconnect {
+	if !conn.IsForceClose() && conn.IsClient() && conn.autoReconnect {
 		poll.netcore.addWaitConn(conn)
 	}
+}
+
+// 主动关闭
+func (poll *Poll) forceClose(fd int) {
+	conn := poll.getConnectionByFd(fd)
+	if conn == nil {
+		return
+	}
+	conn.SetForceClose()
+	poll.close(fd)
 }
 
 func (poll *Poll) addConnection(c *NetConn) {

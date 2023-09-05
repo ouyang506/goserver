@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"utility/ringbuffer"
 )
@@ -18,8 +17,6 @@ import (
 type NetConn struct {
 	BaseConn
 	sendChann chan interface{}
-
-	foceClose int32 // atomic
 	tcpConn   *net.TCPConn
 }
 
@@ -112,7 +109,7 @@ func (netcore *NetPollCore) onWaitConnTimer(t time.Time) {
 
 	for _, conn := range waitConnList {
 		// 已经强制关闭的不再请求连接
-		if atomic.LoadInt32(&conn.foceClose) > 0 {
+		if conn.IsForceClose() {
 			continue
 		}
 
@@ -287,7 +284,7 @@ func (netcore *NetPollCore) loopRead(conn *NetConn) error {
 		}
 
 		if !bClose {
-			if atomic.LoadInt32(&conn.foceClose) > 0 {
+			if conn.IsForceClose() {
 				bClose = true
 			}
 		}
@@ -365,7 +362,7 @@ func (netcore *NetPollCore) loopWrite(conn *NetConn) error {
 		}
 
 		if !bClose {
-			if atomic.LoadInt32(&conn.foceClose) > 0 {
+			if conn.IsForceClose() {
 				bClose = true
 			}
 		}
@@ -501,13 +498,13 @@ func (netcore *NetPollCore) forceRemoveConn(sessionId int64) bool {
 
 	conn, ok := netcore.connectedMap[sessionId]
 	if ok {
-		atomic.StoreInt32(&conn.foceClose, 1)
+		conn.SetForceClose()
 	}
 	delete(netcore.connectedMap, sessionId)
 
 	conn, ok = netcore.waitConnMap[sessionId]
 	if ok {
-		atomic.StoreInt32(&conn.foceClose, 1)
+		conn.SetForceClose()
 	}
 	delete(netcore.waitConnMap, sessionId)
 	return true

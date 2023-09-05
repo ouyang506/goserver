@@ -9,6 +9,8 @@ import (
 	"framework/proto/pb/cs"
 	"framework/rpc"
 	"gate/configmgr"
+	"gate/netmgr"
+	"gate/playermgr"
 	"strconv"
 )
 
@@ -79,6 +81,26 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 		return
 	}
 
-	sessionId := ctx.GetNetConn().GetSessionId()
-	log.Info("player login, id = %v, session id = %v", req.GetPlayerId(), sessionId)
+	conn := ctx.GetNetConn()
+	if conn == nil {
+		log.Error("get connection nil, playerId=%v", playerId)
+		resp.ErrCode = new(int32)
+		*resp.ErrCode = int32(pb.ERROR_CODE_UNKOWN)
+		resp.ErrDesc = new(string)
+		*resp.ErrDesc = "unkown error"
+	}
+	conn.SetAttrib(netmgr.NetAttrPlayer{}, playerId)
+	log.Info("player login gate, playerId = %v, sessionId = %v", playerId, conn.GetSessionId())
+
+	player := playermgr.NewPlayer(playerId)
+	player.SetNetSessionId(conn.GetSessionId())
+	oldPlayer := playermgr.Instance().LoadAndStorePlayer(playerId, player)
+	if oldPlayer != nil {
+		log.Info("remove old player and close the connection, playerId=%d, oldNetSessionId=%v",
+			playerId, oldPlayer.GetNetSessionId())
+		conn.DelAttrib(netmgr.NetAttrPlayer{})
+		rpc.TcpClose(rpc.RpcModeOuter, conn.GetSessionId())
+	}
+
+	playermgr.Instance().OnLogin(player)
 }
