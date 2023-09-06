@@ -3,6 +3,7 @@ module framework
 go 1.20
 
 require (
+	github.com/twmb/murmur3 v1.1.8
 	go.etcd.io/etcd/client/v3 v3.5.1
 	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad
 	golang.org/x/sys v0.1.0

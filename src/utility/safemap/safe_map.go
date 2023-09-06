@@ -21,7 +21,7 @@ func (sm *SafeMap[K, V]) Get(k K) (V, bool) {
 	return v, ok
 }
 
-func (sm *SafeMap[K, V]) Add(k K, v V) {
+func (sm *SafeMap[K, V]) Set(k K, v V) {
 	sm.l.Lock()
 	defer sm.l.Unlock()
 	sm.m[k] = v
