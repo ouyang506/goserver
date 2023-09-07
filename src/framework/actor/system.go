@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"errors"
 	"utility/safemap"
 
 	murmur32 "github.com/twmb/murmur3"
@@ -45,7 +46,6 @@ func (system *ActorSystem) getMailBox(actorId *ActorID) *MailBox {
 
 func (system *ActorSystem) removeMailBox(actorId *ActorID) {
 	system.mailboxMap.Del(actorId.Key())
-
 }
 
 func (system *ActorSystem) Spawn(parent *ActorID, actor Actor) *ActorID {
@@ -69,20 +69,21 @@ func (system *ActorSystem) SpawnNamed(parent *ActorID, name string, actor Actor)
 	return actorId
 }
 
-func (system *ActorSystem) SendSysMsg(target *ActorID, msg *SystemMessage) {
+func (system *ActorSystem) SendSysMsg(target *ActorID, msg *SystemMessage) error {
 	mb := system.getMailBox(target)
 	if mb == nil {
-		return
+		return errors.New("actor not found")
 	}
-	mb.pushSysMsg(msg)
+	return mb.pushSysMsg(msg)
 }
 
-func (system *ActorSystem) SendUserMsg(sender *ActorID, target *ActorID, msg *UserMessage) {
+func (system *ActorSystem) SendUserMsg(sender *ActorID, target *ActorID, msg *UserMessage) error {
 	mb := system.getMailBox(target)
 	if mb == nil {
-		return
+		return errors.New("actor not found")
 	}
 	mb.pushUserMsg(msg)
+	return nil
 }
 
 func (system *ActorSystem) Stop(actorId *ActorID) {

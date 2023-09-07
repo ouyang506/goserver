@@ -11,7 +11,7 @@ type Context interface {
 	Spawn(actor Actor) *ActorID                   // 创建新的actor
 	SpawnNamed(name string, actor Actor) *ActorID // 指定actor名称来创建
 
-	Send(target *ActorID, message any)            // 给actor发送用户消息
+	Send(target *ActorID, message any) error      // 给actor发送用户消息
 	Request(target *ActorID, message any) *Future // 发送请求等待返回
 	Respond(message any)                          // 返回消息给发送方
 
@@ -59,14 +59,14 @@ func (ctx *ContextImpl) SpawnNamed(name string, actor Actor) *ActorID {
 	return childId
 }
 
-func (ctx *ContextImpl) Send(target *ActorID, message any) {
+func (ctx *ContextImpl) Send(target *ActorID, message any) error {
 	sender := ctx.Self()
 	userMsg := &UserMessage{
 		sender:  sender,
 		future:  nil,
 		message: message,
 	}
-	ctx.system.SendUserMsg(sender, target, userMsg)
+	return ctx.system.SendUserMsg(sender, target, userMsg)
 }
 
 func (ctx *ContextImpl) Request(target *ActorID, message any) *Future {
@@ -76,7 +76,10 @@ func (ctx *ContextImpl) Request(target *ActorID, message any) *Future {
 		future:  newFuture(),
 		message: message,
 	}
-	ctx.system.SendUserMsg(sender, target, userMsg)
+	err := ctx.system.SendUserMsg(sender, target, userMsg)
+	if err != nil {
+		userMsg.future.cancel(err)
+	}
 	return userMsg.future
 }
 

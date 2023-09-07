@@ -12,7 +12,7 @@ const (
 )
 
 const (
-	normal int32 = iota
+	active int32 = iota
 	stopping
 	stopped
 )
@@ -38,32 +38,31 @@ func newMailBox(system *ActorSystem, parent *ActorID, aid *ActorID, actor Actor)
 		sysMsgQueue:    queue.NewLockFreeQueue(),
 		userMsgQueue:   queue.NewLockFreeQueue(),
 		scheduleStatus: ScheduleIdle,
-		stopStatus:     normal,
+		stopStatus:     active,
 	}
 	mb.ctx = newContextImpl(system, parent, aid)
 	return mb
 }
 
 func (mb *MailBox) stop() {
-	if atomic.CompareAndSwapInt32(&mb.stopStatus, normal, stopping) {
-		sysMsg := &SystemMessage{
-			message: systemStop,
-		}
-		mb.pushSysMsg(sysMsg)
+	if atomic.CompareAndSwapInt32(&mb.stopStatus, active, stopping) {
+		sysMsg := &SystemMessage{message: systemStop}
+		mb.sysMsgQueue.Enqueue(sysMsg)
+		mb.schedule()
 	}
 }
 
 func (mb *MailBox) active() bool {
-	return atomic.LoadInt32(&mb.stopStatus) == normal
+	return atomic.LoadInt32(&mb.stopStatus) == active
 }
 
-func (mb *MailBox) sysMsgCount() int32 {
-	return mb.sysMsgQueue.Length()
-}
-
-func (mb *MailBox) pushSysMsg(msg *SystemMessage) {
+func (mb *MailBox) pushSysMsg(msg *SystemMessage) error {
+	if !mb.active() {
+		return errors.New("actor stopped")
+	}
 	mb.sysMsgQueue.Enqueue(msg)
 	mb.schedule()
+	return nil
 }
 
 func (mb *MailBox) popSysMsg() *SystemMessage {
@@ -74,13 +73,13 @@ func (mb *MailBox) popSysMsg() *SystemMessage {
 	return v.(*SystemMessage)
 }
 
-func (mb *MailBox) userMsgCount() int32 {
-	return mb.userMsgQueue.Length()
-}
-
-func (mb *MailBox) pushUserMsg(msg *UserMessage) {
+func (mb *MailBox) pushUserMsg(msg *UserMessage) error {
+	if !mb.active() {
+		return errors.New("actor stopped")
+	}
 	mb.userMsgQueue.Enqueue(msg)
 	mb.schedule()
+	return nil
 }
 
 func (mb *MailBox) popUserMsg() *UserMessage {
@@ -100,26 +99,37 @@ func (mb *MailBox) schedule() {
 func (mb *MailBox) process() {
 run:
 	for {
+		// 已经stopped退出协程
+		if atomic.LoadInt32(&mb.stopStatus) == stopped {
+			return
+		}
 		// 将所有系统消息全部处理完再处理用户消息
 		sysMsg := mb.popSysMsg()
 		if sysMsg != nil {
-			mb.ctx.msg = sysMsg
-			mb.actor.Receive(mb.ctx)
-			mb.ctx.msg = nil
-
+			// 收到stop系统消息
 			if _, ok := sysMsg.Message().(*Stop); ok {
-				for {
-					userMsg := mb.popUserMsg()
-					if userMsg == nil {
-						break
+				if atomic.CompareAndSwapInt32(&mb.stopStatus, stopping, stopped) {
+					// 取消掉所有的request future
+					for {
+						userMsg := mb.popUserMsg()
+						if userMsg == nil {
+							break
+						}
+						if userMsg.Future() != nil {
+							userMsg.Future().cancel(errors.New("actor stopped"))
+						}
 					}
-					if userMsg.Future() != nil {
-						userMsg.Future().cancel(errors.New("actor stopped"))
-					}
+					// 给actor发送stop消息
+					mb.ctx.msg = sysMsg
+					mb.actor.Receive(mb.ctx)
+					mb.ctx.msg = nil
 				}
 				return
 			}
 
+			mb.ctx.msg = sysMsg
+			mb.actor.Receive(mb.ctx)
+			mb.ctx.msg = nil
 			continue
 		}
 
