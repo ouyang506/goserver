@@ -2,9 +2,11 @@ package app
 
 import (
 	"fmt"
+	"framework/actor"
 	"framework/log"
 	"gate/configmgr"
-	"gate/keepalivemgr"
+	"gate/logic/keepalive"
+	"gate/logic/playermgr"
 	"gate/netmgr"
 	"os"
 	"sync"
@@ -25,6 +27,7 @@ func GetApp() *App {
 }
 
 type App struct {
+	actorSystem *actor.ActorSystem
 }
 
 func (app *App) init() bool {
@@ -42,6 +45,9 @@ func (app *App) init() bool {
 	logger.Start()
 	log.SetLogger(logger)
 
+	// init actor system
+	app.actorSystem = actor.NewActorSystem()
+
 	return true
 }
 
@@ -54,8 +60,11 @@ func (app *App) Start() {
 	log.Info("App config info :")
 	log.Info("%+v", configmgr.Instance().GetConfig())
 
-	netmgr.Instance().Start()
-	keepalivemgr.Instance().Start()
+	root := app.actorSystem.Root()
+	netmgr.NewNetMgr(root).Start()
+
+	root.SpawnNamed(keepalive.ActorName, keepalive.NewKeepAliveActor())
+	root.SpawnNamed(playermgr.ActorName, playermgr.NewPlayerMgrActor())
 
 	for {
 		app.update()

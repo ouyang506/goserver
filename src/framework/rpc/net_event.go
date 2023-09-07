@@ -6,7 +6,6 @@ import (
 	"framework/proto/pb"
 	"reflect"
 	"runtime"
-	"utility/workpool"
 )
 
 // rpc网络事件回调
@@ -17,8 +16,7 @@ type RpcNetEventHandler interface {
 }
 
 type RpcNetEventHandlerBase struct {
-	owner          *RpcManager
-	processMsgPool *workpool.Pool
+	owner *RpcManager
 }
 
 func (h *RpcNetEventHandlerBase) SetOwner(owner *RpcManager) {
@@ -57,11 +55,7 @@ type InnerNetEventHandler struct {
 }
 
 func NewInnerNetEventHandler() *InnerNetEventHandler {
-	return &InnerNetEventHandler{
-		RpcNetEventHandlerBase: RpcNetEventHandlerBase{
-			processMsgPool: workpool.NewPool(1024),
-		},
-	}
+	return &InnerNetEventHandler{}
 }
 
 func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
@@ -86,11 +80,7 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 			return
 		}
 
-		var ops []workpool.Option
-		if rcvInnerMsg.Guid > 0 {
-			ops = append(ops, workpool.WithWorkerHashKey(uint64(rcvInnerMsg.Guid)))
-		}
-		h.processMsgPool.Submit(func() {
+		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					buff := make([]byte, 4096)
@@ -112,7 +102,7 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 
 				h.GetOwner().TcpSendMsg(c.GetSessionId(), respInnerMsg)
 			}
-		}, ops...)
+		}()
 
 	default:
 		return
@@ -125,11 +115,7 @@ type OuterNetEventHandler struct {
 }
 
 func NewOuterNetEventHandler() *OuterNetEventHandler {
-	return &OuterNetEventHandler{
-		RpcNetEventHandlerBase: RpcNetEventHandlerBase{
-			processMsgPool: workpool.NewPool(1024),
-		},
-	}
+	return &OuterNetEventHandler{}
 }
 
 func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
@@ -152,7 +138,7 @@ func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 			return
 		}
 
-		h.processMsgPool.Submit(func() {
+		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					buff := make([]byte, 4096)
@@ -175,7 +161,7 @@ func (h *OuterNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 				h.GetOwner().TcpSendMsg(c.GetSessionId(), respOuterMsg)
 				return
 			}
-		}, workpool.WithWorkerHashKey(uint64(c.GetSessionId())))
+		}()
 
 	default:
 		return

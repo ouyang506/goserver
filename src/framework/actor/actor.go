@@ -19,7 +19,7 @@ type ActorID struct {
 	id string
 }
 
-func genActorId(name string) *ActorID {
+func NewActorId(name string) *ActorID {
 	if name == "" {
 		return &ActorID{
 			id: fmt.Sprintf("$%d", sequence.Add(1)),

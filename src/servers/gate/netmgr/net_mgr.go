@@ -2,32 +2,22 @@ package netmgr
 
 import (
 	"common"
+	"framework/actor"
 	"framework/registry"
 	"framework/rpc"
 	"gate/configmgr"
-	"gate/handler"
-	"sync"
+	"gate/logic/handler"
 )
-
-var (
-	once           = sync.Once{}
-	netMgr *NetMgr = nil
-)
-
-// singleton
-func Instance() *NetMgr {
-	once.Do(func() {
-		netMgr = newNetMgr()
-	})
-	return netMgr
-}
 
 // 网络管理
 type NetMgr struct {
+	rootContext actor.Context
 }
 
-func newNetMgr() *NetMgr {
-	mgr := &NetMgr{}
+func NewNetMgr(rootContext actor.Context) *NetMgr {
+	mgr := &NetMgr{
+		rootContext: rootContext,
+	}
 
 	return mgr
 }
@@ -36,7 +26,7 @@ func (mgr *NetMgr) Start() {
 	conf := configmgr.Instance().GetConfig()
 
 	// init rpc message handler
-	msgHandler := handler.NewMessageHandler()
+	msgHandler := handler.NewMessageHandler(mgr.rootContext)
 
 	// startup outer rpc for clients
 	rpc.InitRpc(rpc.RpcModeOuter, msgHandler)

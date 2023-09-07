@@ -53,7 +53,7 @@ func (system *ActorSystem) Spawn(parent *ActorID, actor Actor) *ActorID {
 }
 
 func (system *ActorSystem) SpawnNamed(parent *ActorID, name string, actor Actor) *ActorID {
-	actorId := genActorId(name)
+	actorId := NewActorId(name)
 	mb := newMailBox(system, parent, actorId, actor)
 	ok := system.addMailBox(actorId, mb)
 	if !ok {

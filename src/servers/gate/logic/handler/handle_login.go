@@ -9,9 +9,9 @@ import (
 	"framework/proto/pb/cs"
 	"framework/rpc"
 	"gate/configmgr"
-	"gate/netmgr"
-	"gate/playermgr"
+	"gate/logic/playermgr"
 	"strconv"
+	"time"
 )
 
 func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLoginGate, resp *cs.RespLoginGate) {
@@ -88,19 +88,22 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 		*resp.ErrCode = int32(pb.ERROR_CODE_UNKOWN)
 		resp.ErrDesc = new(string)
 		*resp.ErrDesc = "unkown error"
-	}
-	conn.SetAttrib(netmgr.NetAttrPlayer{}, playerId)
-	log.Info("player login gate, playerId = %v, sessionId = %v", playerId, conn.GetSessionId())
-
-	player := playermgr.NewPlayer(playerId)
-	player.SetNetSessionId(conn.GetSessionId())
-	oldPlayer := playermgr.Instance().LoadAndStorePlayer(playerId, player)
-	if oldPlayer != nil {
-		log.Info("remove old player and close the connection, playerId=%d, oldNetSessionId=%v",
-			playerId, oldPlayer.GetNetSessionId())
-		conn.DelAttrib(netmgr.NetAttrPlayer{})
-		rpc.TcpClose(rpc.RpcModeOuter, conn.GetSessionId())
+		return
 	}
 
-	playermgr.Instance().OnLogin(player)
+	// 添加到player管理器
+	playerLoginReq := &playermgr.PlayerLoginReq{
+		PlayerId: playerId,
+		NetConn:  ctx.GetNetConn(),
+	}
+	f := h.Root().Request(playermgr.ActorId, playerLoginReq)
+	_, err = f.WaitTimeout(time.Second * 3)
+	if err != nil {
+		log.Error("add player error, playerId=%v", playerId)
+		resp.ErrCode = new(int32)
+		*resp.ErrCode = int32(pb.ERROR_CODE_UNKOWN)
+		resp.ErrDesc = new(string)
+		*resp.ErrDesc = "unkown error"
+		return
+	}
 }
