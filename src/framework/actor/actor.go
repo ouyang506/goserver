@@ -35,6 +35,10 @@ func (actorId *ActorID) Key() string {
 	return actorId.id
 }
 
+func (actorId *ActorID) String() string {
+	return fmt.Sprintf("%v", actorId.id)
+}
+
 // sequence = 0 预留给root
 var rootActorID *ActorID = &ActorID{"$0"}
 

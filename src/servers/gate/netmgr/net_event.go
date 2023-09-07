@@ -4,19 +4,24 @@ import (
 	"framework/log"
 	"framework/network"
 	"framework/rpc"
+	"gate/logic/handler"
 )
 
 // 网络事件回调
 type ClientNetEventHandler struct {
+	msgHandler *handler.MessageHandler
 	rpc.OuterNetEventHandler
 }
 
-func NewClientNetEventHandler() *ClientNetEventHandler {
-	return &ClientNetEventHandler{}
+func NewClientNetEventHandler(msgHandler *handler.MessageHandler) *ClientNetEventHandler {
+	return &ClientNetEventHandler{
+		msgHandler: msgHandler,
+	}
 }
 
 func (e *ClientNetEventHandler) OnAccept(c network.Connection) {
 	e.OuterNetEventHandler.OnAccept(c)
+	go e.msgHandler.OnNetConnAccept(c)
 }
 
 func (e *ClientNetEventHandler) OnConnect(c network.Connection, err error) {
@@ -26,6 +31,7 @@ func (e *ClientNetEventHandler) OnConnect(c network.Connection, err error) {
 
 func (e *ClientNetEventHandler) OnClosed(c network.Connection) {
 	e.OuterNetEventHandler.OnClosed(c)
+	go e.msgHandler.OnNetConnClosed(c)
 }
 
 func (e *ClientNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {

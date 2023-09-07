@@ -27,10 +27,10 @@ func (mgr *NetMgr) Start() {
 
 	// init rpc message handler
 	msgHandler := handler.NewMessageHandler(mgr.rootContext)
-
+	clientEventHandler := NewClientNetEventHandler(msgHandler)
 	// startup outer rpc for clients
-	rpc.InitRpc(rpc.RpcModeOuter, msgHandler)
-	// startup outer rpc for inner server
+	rpc.InitRpc(rpc.RpcModeOuter, msgHandler, rpc.WithNetEventHandler(clientEventHandler))
+	// startup inner rpc for server
 	rpc.InitRpc(rpc.RpcModeInner, msgHandler)
 
 	//start listen

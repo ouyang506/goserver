@@ -9,17 +9,18 @@ import (
 	"framework/proto/pb/cs"
 	"framework/rpc"
 	"gate/configmgr"
+	"gate/logic/player"
 	"gate/logic/playermgr"
 	"strconv"
 	"time"
 )
 
 func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLoginGate, resp *cs.RespLoginGate) {
-	reqJson, _ := json.Marshal(req)
-	log.Debug("rcv ReqLoginGate: %s", string(reqJson))
 	defer func() {
 		respJson, _ := json.Marshal(resp)
-		log.Debug("response RespLoginGate: %s", string(respJson))
+		reqJson, _ := json.Marshal(req)
+		log.Debug("rcv ReqLoginGate: %s, response RespLoginGate: %s",
+			string(reqJson), string(respJson))
 	}()
 
 	playerId := req.GetPlayerId()
@@ -92,14 +93,30 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 	}
 
 	// 添加到player管理器
-	playerLoginReq := &playermgr.PlayerLoginReq{
+	addPlayerReq := &playermgr.AddPlayerReq{
 		PlayerId: playerId,
 		NetConn:  ctx.GetNetConn(),
 	}
-	f := h.Root().Request(playermgr.ActorId, playerLoginReq)
-	_, err = f.WaitTimeout(time.Second * 3)
+	future := h.Root().Request(playermgr.ActorId, addPlayerReq)
+	addPlayerResp, err := future.WaitTimeout(time.Second * 3)
 	if err != nil {
-		log.Error("add player error, playerId=%v", playerId)
+		log.Error("add player error, playerId=%v, err=%v", playerId, err)
+		resp.ErrCode = new(int32)
+		*resp.ErrCode = int32(pb.ERROR_CODE_UNKOWN)
+		resp.ErrDesc = new(string)
+		*resp.ErrDesc = "unkown error"
+		return
+	}
+	playerActorId := addPlayerResp.(*playermgr.AddPlayerResp).PlayerActorId
+
+	// 玩家登入操作
+	playerLoginReq := &player.LoginReq{
+		NetConn: ctx.GetNetConn(),
+	}
+	future = h.Root().Request(playerActorId, playerLoginReq)
+	_, err = future.WaitTimeout(time.Second * 3)
+	if err != nil {
+		log.Error("player login error, playerId=%v, err=%v", playerId, err)
 		resp.ErrCode = new(int32)
 		*resp.ErrCode = int32(pb.ERROR_CODE_UNKOWN)
 		resp.ErrDesc = new(string)

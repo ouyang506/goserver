@@ -7,17 +7,32 @@ import (
 	"framework/rpc"
 )
 
-type NetAttrPlayer struct{}
+type NetAttrPlayerId struct{}
 
 type PlayerActor struct {
 	playerId int64
 	netConn  network.Connection
 }
 
-type BindNetConnReq struct {
+// 玩家登入
+type LoginReq struct {
 	NetConn network.Connection
 }
-type BindNetConnResp struct {
+
+type LoginResp struct {
+}
+
+// 玩家登出原因
+const (
+	ReasonDisconnected = "disconnected"
+)
+
+// 玩家登出
+type LogoutReq struct {
+	Reason string
+}
+
+type LogoutResp struct {
 }
 
 func NewPlayerActor(playerId int64) *PlayerActor {
@@ -30,14 +45,41 @@ func (player *PlayerActor) Receive(ctx actor.Context) {
 	switch req := ctx.Message().(type) {
 	case *actor.Start:
 	case *actor.Stop:
-	case *BindNetConnReq:
-		player.bindNetConn(ctx, req)
+	case *LoginReq:
+		player.login(ctx, req)
+	case *LogoutReq:
+		player.logout(ctx, req)
 	}
 }
 
-// 绑定网络连接
-func (player *PlayerActor) bindNetConn(ctx actor.Context, req *BindNetConnReq) {
-	newNetConn := req.NetConn
+// 玩家登入
+func (player *PlayerActor) login(ctx actor.Context, req *LoginReq) {
+	player.setNetConn(req.NetConn)
+
+	// TODO: broadcast其他gate下线相同的player
+	ctx.Respond(&LoginResp{})
+}
+
+// 玩家登出
+func (player *PlayerActor) logout(ctx actor.Context, req *LogoutReq) {
+	sessionId := int64(0)
+	if player.netConn != nil {
+		sessionId = player.netConn.GetSessionId()
+	}
+	log.Info("player logout, playerId=%v, reason=%v, sessionId=%v",
+		player.playerId, req.Reason, sessionId)
+
+	if req.Reason != ReasonDisconnected {
+		if sessionId != 0 {
+			rpc.TcpClose(rpc.RpcModeOuter, sessionId)
+		}
+	}
+	ctx.Respond(&LogoutResp{})
+}
+
+// 设置网络
+func (player *PlayerActor) setNetConn(conn network.Connection) {
+	newNetConn := conn
 	oldNetConn := player.netConn
 	oldSessionId := int64(0)
 	if oldNetConn != nil {
@@ -45,20 +87,15 @@ func (player *PlayerActor) bindNetConn(ctx actor.Context, req *BindNetConnReq) {
 	}
 
 	player.netConn = newNetConn
-	player.netConn.SetAttrib(NetAttrPlayer{}, player.playerId)
 
-	log.Info("player bind network connection, playerId=%v, oldSession=%v, newSession=%v",
+	log.Info("player set connection, playerId=%v, oldSession=%v, newSession=%v",
 		player.playerId, oldSessionId, newNetConn.GetSessionId())
 
 	// 关闭旧的连接
 	if oldNetConn != nil && oldNetConn != newNetConn {
-		oldNetConn.DelAttrib(NetAttrPlayer{})
+		oldNetConn.DelAttrib(NetAttrPlayerId{})
 		rpc.TcpClose(rpc.RpcModeOuter, oldNetConn.GetSessionId())
-		log.Info("player bind new connection, so close the old connection, playerId=%v, sessionId=%v",
+		log.Info("player connection changed, so close the old connection, playerId=%v, oldSessionId=%v",
 			player.playerId, oldNetConn.GetSessionId())
 	}
-
-	// TODO: broadcast其他gate下线相同的player
-
-	ctx.Respond(&BindNetConnResp{})
 }
