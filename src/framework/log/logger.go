@@ -22,11 +22,11 @@ var LogLevelName = []string{
 
 type Logger interface {
 	SetLogLevel(LogLevel)
-	LogDebug(string, ...interface{})
-	LogInfo(string, ...interface{})
-	LogWarn(string, ...interface{})
-	LogError(string, ...interface{})
-	LogFatal(string, ...interface{})
+	LogDebug(int, string, ...interface{})
+	LogInfo(int, string, ...interface{})
+	LogWarn(int, string, ...interface{})
+	LogError(int, string, ...interface{})
+	LogFatal(int, string, ...interface{})
 	Flush()
 }
 
@@ -42,9 +42,9 @@ type LogContent struct {
 	content  string
 }
 
-//**************************//
+// **************************//
 // 设置一个全局的Logger供使用
-//**************************//
+// **************************//
 var logger Logger = nil
 
 func SetLogger(l Logger) {
@@ -58,31 +58,31 @@ func Debug(fmtStr string, args ...interface{}) {
 	if logger == nil {
 		return
 	}
-	logger.LogDebug(fmtStr, args...)
+	logger.LogDebug(1, fmtStr, args...)
 }
 func Info(fmtStr string, args ...interface{}) {
 	if logger == nil {
 		return
 	}
-	logger.LogInfo(fmtStr, args...)
+	logger.LogInfo(1, fmtStr, args...)
 }
 func Warn(fmtStr string, args ...interface{}) {
 	if logger == nil {
 		return
 	}
-	logger.LogWarn(fmtStr, args...)
+	logger.LogWarn(1, fmtStr, args...)
 }
 func Error(fmtStr string, args ...interface{}) {
 	if logger == nil {
 		return
 	}
-	logger.LogError(fmtStr, args...)
+	logger.LogError(1, fmtStr, args...)
 }
 func Fatal(fmtStr string, args ...interface{}) {
 	if logger == nil {
 		return
 	}
-	logger.LogFatal(fmtStr, args...)
+	logger.LogFatal(1, fmtStr, args...)
 }
 func Flush() {
 	if logger == nil {

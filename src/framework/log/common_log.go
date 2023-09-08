@@ -2,8 +2,8 @@ package log
 
 import (
 	"fmt"
+	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 	"utility/queue"
 )
@@ -46,59 +46,44 @@ func (cl *CommonLogger) loopSink() {
 	}
 }
 
-func (cl *CommonLogger) levelLog(lvl LogLevel, fmtStr string, args ...interface{}) {
+func (cl *CommonLogger) levelLog(depth int, lvl LogLevel, fmtStr string, args ...interface{}) {
 	if cl.logLvl > lvl {
 		return
 	}
-
 	content := &LogContent{}
 	content.logLvl = lvl
 	content.logTime = time.Now()
 
-	fileName := ""
-	tracebuf := make([]byte, 1024)
-	length := runtime.Stack(tracebuf, false)
-	tracebuf = tracebuf[:length]
-	slitArr := strings.Split(string(tracebuf), "\n")
-	if len(slitArr) >= 9 {
-		splitNameArr := strings.Split(slitArr[8], " +0x")
-		if len(splitNameArr) >= 2 {
-			startPos := 0
-			size := len(splitNameArr[0])
-			for i := size - 1; i >= 0; i-- {
-				if splitNameArr[0][i] == '/' {
-					startPos = i
-					break
-				}
-			}
-			if startPos > 0 {
-				fileName = string(splitNameArr[0][startPos+1:])
-			}
-		}
+	_, fullname, line, ok := runtime.Caller(depth + 1)
+	if !ok {
+		content.fileName = "???.go:0"
+	} else {
+		_, fileName := filepath.Split(fullname)
+		content.fileName = fmt.Sprintf("%s:%d", fileName, line)
 	}
-	content.fileName = fileName
+
 	content.content = fmt.Sprintf(fmtStr, args...)
 	cl.queue.Enqueue(content)
 }
 
-func (cl *CommonLogger) LogDebug(fmtStr string, args ...interface{}) {
-	cl.levelLog(LogLevelDebug, fmtStr, args...)
+func (cl *CommonLogger) LogDebug(depth int, fmtStr string, args ...interface{}) {
+	cl.levelLog(depth+1, LogLevelDebug, fmtStr, args...)
 }
 
-func (cl *CommonLogger) LogInfo(fmtStr string, args ...interface{}) {
-	cl.levelLog(LogLevelInfo, fmtStr, args...)
+func (cl *CommonLogger) LogInfo(depth int, fmtStr string, args ...interface{}) {
+	cl.levelLog(depth+1, LogLevelInfo, fmtStr, args...)
 }
 
-func (cl *CommonLogger) LogWarn(fmtStr string, args ...interface{}) {
-	cl.levelLog(LogLevelWarn, fmtStr, args...)
+func (cl *CommonLogger) LogWarn(depth int, fmtStr string, args ...interface{}) {
+	cl.levelLog(depth+1, LogLevelWarn, fmtStr, args...)
 }
 
-func (cl *CommonLogger) LogError(fmtStr string, args ...interface{}) {
-	cl.levelLog(LogLevelError, fmtStr, args...)
+func (cl *CommonLogger) LogError(depth int, fmtStr string, args ...interface{}) {
+	cl.levelLog(depth+1, LogLevelError, fmtStr, args...)
 }
 
-func (cl *CommonLogger) LogFatal(fmtStr string, args ...interface{}) {
-	cl.levelLog(LogLevelFatal, fmtStr, args...)
+func (cl *CommonLogger) LogFatal(depth int, fmtStr string, args ...interface{}) {
+	cl.levelLog(depth+1, LogLevelFatal, fmtStr, args...)
 }
 
 func (cl *CommonLogger) Flush() {
