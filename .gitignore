@@ -4,6 +4,8 @@ bin/
 software/data
 
 .vscode
+/src/goserver.code-workspace
+
 vendor
 __debug_bin*.exe
 src/**/*.exe
