@@ -1,5 +1,10 @@
 objects = login gate mysqlproxy redisproxy
 
+# make debug=true
+ifeq ($(debug),true)
+	build_flags = -gcflags "-l -N"
+endif
+
 .PHONY : all
 all: $(objects)
 
@@ -35,33 +40,33 @@ mockclient: utility  common  framework
 	@echo "build mockclient"
 	@cd clients/mockclient && \
 	go mod tidy	&& \
-	go build -o ../../../bin/
+	go build $(build_flags) -o ../../../bin/
 	
 .PHONY : login
 login: utility  common  framework
 	@echo "build server login"
 	@cd servers/login && \
 	go mod tidy	&& \
-	go build -o ../../../bin/
+	go build $(build_flags) -o ../../../bin/
 	
 .PHONY : gate
 gate: utility  common  framework
 	@echo "build server gate"
 	@cd servers/gate && \
 	go mod tidy	&& \
-	go build -o ../../../bin/
+	go build $(build_flags) -o ../../../bin/
 	
 .PHONY : mysqlproxy
 mysqlproxy: utility  common  framework
 	@echo "build server mysqlproxy"
 	@cd servers/mysqlproxy && \
 	go mod tidy	&& \
-	go build -o ../../../bin/
+	go build $(build_flags) -o ../../../bin/
 	
 .PHONY : redisproxy
 redisproxy: utility  common  framework
 	@echo "build server redisproxy"
 	@cd servers/redisproxy && \
 	go mod tidy	&& \
-	go build -o ../../../bin/
+	go build $(build_flags) -o ../../../bin/
 
