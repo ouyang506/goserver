@@ -3,7 +3,7 @@ package playermgr
 import (
 	"framework/actor"
 	"framework/log"
-	"framework/network"
+	"framework/rpc"
 	"gate/logic/player"
 )
 
@@ -12,27 +12,13 @@ var (
 	ActorId   = actor.NewActorId(ActorName)
 )
 
-type PlayerMgrActor struct {
-	playerMap map[int64]*actor.ActorID
-	connMap   map[int64]*actor.ActorID
-}
-
 // 添加玩家
 type AddPlayerReq struct {
 	PlayerId int64
-	NetConn  network.Connection
+	ConnId   int64
 }
 
 type AddPlayerResp struct {
-	PlayerActorId *actor.ActorID
-}
-
-// 查询玩家
-type FindPlayerReq struct {
-	PlayerId int64
-}
-
-type FindPlayerResp struct {
 	PlayerActorId *actor.ActorID
 }
 
@@ -45,64 +31,157 @@ type RemovePlayerResp struct {
 	PlayerActorId *actor.ActorID
 }
 
+// 查询玩家
+type FindPlayerReq struct {
+	PlayerId int64
+}
+
+type FindPlayerResp struct {
+	PlayerActorId *actor.ActorID
+}
+
+// 通过网络连接查询玩家
+type FindPlayerByConnReq struct {
+	ConnId int64
+}
+
+type FindPlayerByConnResp struct {
+	PlayerId      int64
+	PlayerActorId *actor.ActorID
+}
+
+// 通过网络连接删除玩家
+type RemovePlayerByConnReq struct {
+	ConnId int64
+}
+
+type RemovePlayerByConnResp struct {
+	PlayerId      int64
+	PlayerActorId *actor.ActorID
+}
+
+type PlayerInfo struct {
+	playerId int64
+	actorId  *actor.ActorID
+	connId   int64
+}
+
+type PlayerMgrActor struct {
+	playerMap map[int64]*PlayerInfo
+	connMap   map[int64]*PlayerInfo
+}
+
 func NewPlayerMgrActor() *PlayerMgrActor {
-	return &PlayerMgrActor{}
+	return &PlayerMgrActor{
+		playerMap: make(map[int64]*PlayerInfo),
+		connMap:   make(map[int64]*PlayerInfo),
+	}
 }
 
 // 管理所有玩家，不要阻塞
 func (playerMgr *PlayerMgrActor) Receive(ctx actor.Context) {
 	switch req := ctx.Message().(type) {
-	case *actor.Start:
-		playerMgr.playerMap = make(map[int64]*actor.ActorID)
-		playerMgr.connMap = make(map[int64]*actor.ActorID)
 	case *AddPlayerReq:
 		playerMgr.addPlayer(ctx, req)
-	case *FindPlayerReq:
-		playerMgr.findPlayer(ctx, req)
 	case *RemovePlayerReq:
 		playerMgr.removePlayer(ctx, req)
+	case *FindPlayerReq:
+		playerMgr.findPlayer(ctx, req)
+	case *FindPlayerByConnReq:
+		playerMgr.findPlayerByConn(ctx, req)
+	case *RemovePlayerByConnReq:
+		playerMgr.removePlayerByConn(ctx, req)
 	}
 }
 
 // 添加玩家
 func (mgr *PlayerMgrActor) addPlayer(ctx actor.Context, req *AddPlayerReq) {
 	playerId := req.PlayerId
-	playerActorId, ok := mgr.playerMap[playerId]
+	playerInfo, ok := mgr.playerMap[playerId]
 	if !ok {
-		playerActorId = ctx.Spawn(player.NewPlayerActor(playerId))
-		mgr.playerMap[playerId] = playerActorId
-		log.Info("player manager add player, playerId=%v, actorId=%v", playerId, playerActorId)
+		playerActorId := ctx.Spawn(player.NewPlayerActor(playerId, req.ConnId))
+		playerInfo = &PlayerInfo{
+			playerId: playerId,
+			actorId:  playerActorId,
+			connId:   req.ConnId,
+		}
+		mgr.playerMap[playerId] = playerInfo
+		mgr.connMap[req.ConnId] = playerInfo
+		log.Info("player manager add player, playerId=%v, actorId=%v, connId=%v",
+			playerId, playerActorId, req.ConnId)
+	} else {
+		// 关闭旧连接
+		oldConnId := playerInfo.connId
+		// 赋值新的connId
+		playerInfo.connId = req.ConnId
+
+		delete(mgr.connMap, oldConnId)
+		mgr.connMap[req.ConnId] = playerInfo
+
+		log.Info("close player old net connection, playerId=%v, oldConnId=%v, newConnId=%v",
+			playerId, oldConnId, req.ConnId)
+		rpc.TcpClose(rpc.RpcModeOuter, oldConnId)
 	}
 
-	req.NetConn.SetAttrib(player.NetAttrPlayerId{}, playerId)
-	ctx.Respond(&AddPlayerResp{PlayerActorId: playerActorId})
-}
-
-// 查找玩家
-func (mgr *PlayerMgrActor) findPlayer(ctx actor.Context, req *FindPlayerReq) {
-	playerId := req.PlayerId
-	playerActorId, ok := mgr.playerMap[playerId]
-	if !ok {
-		ctx.Respond(&FindPlayerResp{PlayerActorId: nil})
-		return
-	}
-	ctx.Respond(&FindPlayerResp{PlayerActorId: playerActorId})
+	ctx.Respond(&AddPlayerResp{PlayerActorId: playerInfo.actorId})
 }
 
 // 删除玩家
 // notice : 删除时将停止掉PlayerActor,删除后不要再往PlayerActor发送消息
 func (mgr *PlayerMgrActor) removePlayer(ctx actor.Context, req *RemovePlayerReq) {
 	playerId := req.PlayerId
-	playerActorId, ok := mgr.playerMap[playerId]
+	playerInfo, ok := mgr.playerMap[playerId]
 	if !ok {
 		ctx.Respond(&RemovePlayerResp{PlayerActorId: nil})
 		return
 	}
 
-	log.Info("player manager remove player, playerId=%v, actorId=%v", playerId, playerActorId)
+	log.Info("player manager remove player, playerId=%v, actorId=%v", playerId, playerInfo.actorId)
 
 	delete(mgr.playerMap, playerId)
-	ctx.Stop(playerActorId)
+	delete(mgr.connMap, playerInfo.connId)
+	ctx.Stop(playerInfo.actorId)
 
-	ctx.Respond(&RemovePlayerResp{PlayerActorId: playerActorId})
+	ctx.Respond(&RemovePlayerResp{PlayerActorId: playerInfo.actorId})
+}
+
+// 查找玩家
+func (mgr *PlayerMgrActor) findPlayer(ctx actor.Context, req *FindPlayerReq) {
+	playerId := req.PlayerId
+	playerInfo, ok := mgr.playerMap[playerId]
+	if !ok {
+		ctx.Respond(&FindPlayerResp{PlayerActorId: nil})
+		return
+	}
+	ctx.Respond(&FindPlayerResp{PlayerActorId: playerInfo.actorId})
+}
+
+// 通过网络连接查找玩家
+func (mgr *PlayerMgrActor) findPlayerByConn(ctx actor.Context, req *FindPlayerByConnReq) {
+	connId := req.ConnId
+	playerInfo, ok := mgr.connMap[connId]
+	if !ok {
+		ctx.Respond(&FindPlayerByConnResp{PlayerId: 0, PlayerActorId: nil})
+		return
+	}
+	ctx.Respond(&FindPlayerByConnResp{PlayerId: playerInfo.playerId, PlayerActorId: playerInfo.actorId})
+}
+
+// 通过网络连接删除玩家
+func (mgr *PlayerMgrActor) removePlayerByConn(ctx actor.Context, req *RemovePlayerByConnReq) {
+	connId := req.ConnId
+	playerInfo, ok := mgr.connMap[connId]
+	if !ok {
+		ctx.Respond(&RemovePlayerByConnResp{PlayerActorId: nil})
+		return
+	}
+
+	log.Info("player manager remove player by connection, connId=%v, playerId=%v, playerActorId=%v",
+		connId, playerInfo.playerId, playerInfo.actorId)
+
+	delete(mgr.playerMap, playerInfo.playerId)
+	delete(mgr.connMap, connId)
+	ctx.Stop(playerInfo.actorId)
+
+	ctx.Respond(&RemovePlayerByConnResp{PlayerId: playerInfo.playerId, PlayerActorId: playerInfo.actorId})
 }

@@ -21,7 +21,6 @@ func NewClientNetEventHandler(msgHandler *handler.MessageHandler) *ClientNetEven
 
 func (e *ClientNetEventHandler) OnAccept(c network.Connection) {
 	e.OuterNetEventHandler.OnAccept(c)
-	go e.msgHandler.OnNetConnAccept(c)
 }
 
 func (e *ClientNetEventHandler) OnConnect(c network.Connection, err error) {

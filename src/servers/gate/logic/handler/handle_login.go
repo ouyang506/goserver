@@ -95,7 +95,7 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 	// 添加到player管理器
 	addPlayerReq := &playermgr.AddPlayerReq{
 		PlayerId: playerId,
-		NetConn:  ctx.GetNetConn(),
+		ConnId:   conn.GetSessionId(),
 	}
 	future := h.Root().Request(playermgr.ActorId, addPlayerReq)
 	addPlayerResp, err := future.WaitTimeout(time.Second * 3)
@@ -110,9 +110,7 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 	playerActorId := addPlayerResp.(*playermgr.AddPlayerResp).PlayerActorId
 
 	// 玩家登入操作
-	playerLoginReq := &player.LoginReq{
-		NetConn: ctx.GetNetConn(),
-	}
+	playerLoginReq := &player.LoginReq{}
 	future = h.Root().Request(playerActorId, playerLoginReq)
 	_, err = future.WaitTimeout(time.Second * 3)
 	if err != nil {
@@ -123,4 +121,9 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 		*resp.ErrDesc = "unkown error"
 		return
 	}
+
+	// connection绑定player
+	conn.SetAttrib(player.NetAttrPlayerId{}, playerId)
+
+	// TODO: broadcast其他gate下线相同的player
 }
