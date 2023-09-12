@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
+	sync "sync"
 )
 
 const (
@@ -19,14 +20,99 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// 协议路由
+type MsgRoute int32
+
+const (
+	MsgRoute_cs_gate_msg_id_begin   MsgRoute = 1001
+	MsgRoute_cs_gate_msg_id_end     MsgRoute = 1100
+	MsgRoute_cs_player_msg_id_begin MsgRoute = 1101
+	MsgRoute_cs_player_msg_id_end   MsgRoute = 1200
+)
+
+// Enum value maps for MsgRoute.
+var (
+	MsgRoute_name = map[int32]string{
+		1001: "cs_gate_msg_id_begin",
+		1100: "cs_gate_msg_id_end",
+		1101: "cs_player_msg_id_begin",
+		1200: "cs_player_msg_id_end",
+	}
+	MsgRoute_value = map[string]int32{
+		"cs_gate_msg_id_begin":   1001,
+		"cs_gate_msg_id_end":     1100,
+		"cs_player_msg_id_begin": 1101,
+		"cs_player_msg_id_end":   1200,
+	}
+)
+
+func (x MsgRoute) Enum() *MsgRoute {
+	p := new(MsgRoute)
+	*p = x
+	return p
+}
+
+func (x MsgRoute) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MsgRoute) Descriptor() protoreflect.EnumDescriptor {
+	return file_cs_common_proto_enumTypes[0].Descriptor()
+}
+
+func (MsgRoute) Type() protoreflect.EnumType {
+	return &file_cs_common_proto_enumTypes[0]
+}
+
+func (x MsgRoute) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Do not use.
+func (x *MsgRoute) UnmarshalJSON(b []byte) error {
+	num, err := protoimpl.X.UnmarshalJSONEnum(x.Descriptor(), b)
+	if err != nil {
+		return err
+	}
+	*x = MsgRoute(num)
+	return nil
+}
+
+// Deprecated: Use MsgRoute.Descriptor instead.
+func (MsgRoute) EnumDescriptor() ([]byte, []int) {
+	return file_cs_common_proto_rawDescGZIP(), []int{0}
+}
+
 var File_cs_common_proto protoreflect.FileDescriptor
 
 var file_cs_common_proto_rawDesc = []byte{
 	0x0a, 0x0f, 0x63, 0x73, 0x5f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x12, 0x02, 0x63, 0x73,
+	0x6f, 0x12, 0x02, 0x63, 0x73, 0x2a, 0x77, 0x0a, 0x09, 0x6d, 0x73, 0x67, 0x5f, 0x72, 0x6f, 0x75,
+	0x74, 0x65, 0x12, 0x19, 0x0a, 0x14, 0x63, 0x73, 0x5f, 0x67, 0x61, 0x74, 0x65, 0x5f, 0x6d, 0x73,
+	0x67, 0x5f, 0x69, 0x64, 0x5f, 0x62, 0x65, 0x67, 0x69, 0x6e, 0x10, 0xe9, 0x07, 0x12, 0x17, 0x0a,
+	0x12, 0x63, 0x73, 0x5f, 0x67, 0x61, 0x74, 0x65, 0x5f, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f,
+	0x65, 0x6e, 0x64, 0x10, 0xcc, 0x08, 0x12, 0x1b, 0x0a, 0x16, 0x63, 0x73, 0x5f, 0x70, 0x6c, 0x61,
+	0x79, 0x65, 0x72, 0x5f, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x62, 0x65, 0x67, 0x69, 0x6e,
+	0x10, 0xcd, 0x08, 0x12, 0x19, 0x0a, 0x14, 0x63, 0x73, 0x5f, 0x70, 0x6c, 0x61, 0x79, 0x65, 0x72,
+	0x5f, 0x6d, 0x73, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x65, 0x6e, 0x64, 0x10, 0xb0, 0x09,
 }
 
-var file_cs_common_proto_goTypes = []interface{}{}
+var (
+	file_cs_common_proto_rawDescOnce sync.Once
+	file_cs_common_proto_rawDescData = file_cs_common_proto_rawDesc
+)
+
+func file_cs_common_proto_rawDescGZIP() []byte {
+	file_cs_common_proto_rawDescOnce.Do(func() {
+		file_cs_common_proto_rawDescData = protoimpl.X.CompressGZIP(file_cs_common_proto_rawDescData)
+	})
+	return file_cs_common_proto_rawDescData
+}
+
+var file_cs_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_cs_common_proto_goTypes = []interface{}{
+	(MsgRoute)(0), // 0: cs.msg_route
+}
 var file_cs_common_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
 	0, // [0:0] is the sub-list for method input_type
@@ -45,13 +131,14 @@ func file_cs_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_cs_common_proto_rawDesc,
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   0,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_cs_common_proto_goTypes,
 		DependencyIndexes: file_cs_common_proto_depIdxs,
+		EnumInfos:         file_cs_common_proto_enumTypes,
 	}.Build()
 	File_cs_common_proto = out.File
 	file_cs_common_proto_rawDesc = nil

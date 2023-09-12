@@ -1,0 +1,5 @@
+login: 		5000(对外)
+gate: 		5100(对外) 5200
+mysqlproxy:	5300
+redisproxy:	5400
+player:		5500

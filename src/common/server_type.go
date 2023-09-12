@@ -1,8 +1,10 @@
 package common
 
 const (
-	ServerTypeLogin      int = 1
-	ServerTypeGate       int = 2
-	ServerTypeMysqlProxy int = 3
-	ServerTypeRedisProxy int = 4
+	ServerTypeClient     int = 1
+	ServerTypeLogin      int = 2
+	ServerTypeGate       int = 3
+	ServerTypeMysqlProxy int = 4
+	ServerTypeRedisProxy int = 5
+	ServerTypePlayer     int = 6
 )

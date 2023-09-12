@@ -1,4 +1,4 @@
-objects = login gate mysqlproxy redisproxy
+objects = login gate player mysqlproxy redisproxy
 
 # make debug=true
 ifeq ($(debug),true)
@@ -53,6 +53,13 @@ login: utility  common  framework
 gate: utility  common  framework
 	@echo "build server gate"
 	@cd servers/gate && \
+	go mod tidy	&& \
+	go build $(build_flags) -o ../../../bin/
+
+.PHONY : player
+player: utility  common  framework
+	@echo "build server player"
+	@cd servers/player && \
 	go mod tidy	&& \
 	go build $(build_flags) -o ../../../bin/
 	

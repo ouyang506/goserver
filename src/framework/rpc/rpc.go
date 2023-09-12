@@ -136,6 +136,15 @@ func TcpClose(mode RpcModeType, sessionId int64) error {
 	return rpcMgr.TcpClose(sessionId)
 }
 
+// 发送消息
+func TcpSend(mode RpcModeType, sessionId int64, msg any) error {
+	rpcMgr := GetRpcManager(mode)
+	if rpcMgr == nil {
+		return ErrorRpcMgrNotFound
+	}
+	return rpcMgr.TcpSendMsg(sessionId, msg)
+}
+
 // 获取注册中心服务以及监听服务变化事件
 func FetchWatchService(mode RpcModeType, reg registry.Registry) error {
 	rpcMgr := GetRpcManager(mode)
@@ -160,14 +169,14 @@ func Notify(targetSvrType int, guid int64, req proto.Message, options ...Option)
 		return ErrorRpcMgrNotFound
 	}
 
-	rpc := createRpc(RpcModeInner, targetSvrType, guid, req, nil, options...)
-	rpc.IsOneway = true
+	rpcEntry := createRpc(RpcModeInner, targetSvrType, guid, req, nil, options...)
+	rpcEntry.IsOneway = true
 
-	addRpcTimeout := rpc.Timeout
+	addRpcTimeout := rpcEntry.Timeout
 	tryAddRpcCount := 5
 	addResult := false
 	for i := 0; i < tryAddRpcCount; i++ {
-		addResult = rpcMgr.AddRpc(rpc)
+		addResult = rpcMgr.AddRpc(rpcEntry)
 		if addResult {
 			break
 		}
@@ -202,16 +211,16 @@ func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 		return ErrorRpcMgrNotFound
 	}
 
-	rpc := createRpc(rpcMode, targetSvrType, guid, req, resp, options...)
+	rpcEntry := createRpc(rpcMode, targetSvrType, guid, req, resp, options...)
 
 	// 1.由于服务启动时序问题，可能暂未拉取到注册中心的服务，导致没有分配到代理管道
 	// 2.发送缓冲区已满
-	timeout := rpc.Timeout
+	timeout := rpcEntry.Timeout
 	addRpcTimeout := timeout / 2
 	tryAddRpcCount := 5
 	addResult := false
 	for i := 0; i < tryAddRpcCount; i++ {
-		addResult = rpcMgr.AddRpc(rpc)
+		addResult = rpcMgr.AddRpc(rpcEntry)
 		if addResult {
 			break
 		}
@@ -224,14 +233,14 @@ func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 		err = ErrorAddRpc
 		return
 	}
-	defer rpcMgr.RemoveRpc(rpc.CallId)
+	defer rpcMgr.RemoveRpc(rpcEntry.CallId)
 
 	// wait for rpc response util timeout
 	bTimeout := false
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
-	case <-rpc.NotifyChan:
+	case <-rpcEntry.NotifyChan:
 		break
 	case <-timer.C:
 		bTimeout = true
@@ -239,8 +248,8 @@ func doCall(rpcMode RpcModeType, targetSvrType int, guid int64,
 
 	if bTimeout {
 		err = ErrorRpcTimeOut
-		log.Error("rpc timeout, callId: %v", rpc.CallId)
-		rpc.setTimeoutFlag()
+		log.Error("rpc timeout, callId: %v", rpcEntry.CallId)
+		rpcEntry.setTimeoutFlag()
 	}
 
 	return

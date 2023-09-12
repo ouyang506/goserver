@@ -8,6 +8,7 @@ protoc -I../src/framework/proto/idl/ --go_out=../src/framework/proto --go_opt=Me
 set protoc_cs=protoc -I../src/framework/proto/idl/cs --go_out=../src/framework/proto/pb
 %protoc_cs%  --go_opt=Mcs_common.proto=cs/ 	cs_common.proto
 %protoc_cs%  --go_opt=Mcs_gate.proto=cs/ 	cs_gate.proto
+%protoc_cs%  --go_opt=Mcs_player.proto=cs/ 	cs_player.proto
 
 
 set protoc_ss=protoc -I../src/framework/proto/idl/cs -I../src/framework/proto/idl/ss --go_out=../src/framework/proto/pb

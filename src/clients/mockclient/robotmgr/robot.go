@@ -105,7 +105,7 @@ func (robot *Robot) ChangeState(e *fsm.Event) {
 }
 
 func (robot *Robot) Event(event string) {
-	robot.resetStateFrameTime()
+	robot.stateFrameTime = 0
 	if robot.fsm.CanEvent(event) {
 		robot.fsm.Event(event)
 	} else {
@@ -130,7 +130,8 @@ func (robot *Robot) checkStateFrameTime(delta int64) bool {
 }
 
 func (robot *Robot) resetStateFrameTime() {
-	robot.stateFrameTime = 0
+	now := time.Now().UnixMilli()
+	robot.stateFrameTime = now
 }
 
 func (robot *Robot) tickStateLogout(e *fsm.Event) {
@@ -297,7 +298,27 @@ func (robot *Robot) tickStateLoginGate(e *fsm.Event) {
 
 // 查询玩家
 func (robot *Robot) tickStateQueryPlayer(e *fsm.Event) {
-	if !robot.checkStateFrameTime(500) {
+	if !robot.checkStateFrameTime(500 * 10) {
 		return
 	}
+
+	req := &cs.ReqQueryPlayer{}
+	resp := &cs.RespQueryPlayer{}
+	err := rpcutil.ClientCall(req, resp)
+	if err != nil {
+		log.Error("rpc call query player failed: %v", err)
+		robot.resetStateFrameTime()
+		return
+	}
+
+	// if resp.GetErrCode() != 0 {
+	// 	log.Error("rpc call query player response error code: %v, desc: %v",
+	// 		resp.GetErrCode(), resp.GetErrDesc())
+	// 	robot.resetStateFrameTime()
+	// 	return
+	// }
+
+	log.Error("rpc call query player response code: %v, desc: %v",
+		resp.GetErrCode(), resp.GetErrDesc())
+	robot.resetStateFrameTime()
 }

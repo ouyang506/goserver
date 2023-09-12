@@ -20,7 +20,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-//消息ID定义[范围1000-1100]
+//消息ID定义[范围1001-1100]，见cs_comon::msg_route
 type CsGate int32
 
 const (

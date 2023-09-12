@@ -10,6 +10,8 @@ var CSRpcMsg [][]any = [][]any{
 	//cs_gate
 	{int(cs.CsGate_msg_id_req_heart_beat), &cs.ReqHeartBeat{}, &cs.RespHeartBeat{}},
 	{int(cs.CsGate_msg_id_req_login_gate), &cs.ReqLoginGate{}, &cs.RespLoginGate{}},
+	//cs_player
+	{int(cs.CsPlayer_msg_id_req_query_player), &cs.ReqQueryPlayer{}, &cs.RespQueryPlayer{}},
 }
 
 var SSRpcMsg [][]any = [][]any{

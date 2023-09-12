@@ -15,13 +15,6 @@
 	<!-- 服务监听 -->
     <listen>
         <ip>127.0.0.1</ip>
-        <port>5200</port>
+        <port>5500</port>
     </listen>
-	
-	<!-- gate监听客户端 -->
-    <outer>
-		<outer_ip>127.0.0.1</outer_ip>
-        <listen_ip>0.0.0.0</listen_ip>
-        <port>5100</port>
-    </outer>
 </root>
