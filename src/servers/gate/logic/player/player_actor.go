@@ -1,8 +1,10 @@
 package player
 
 import (
+	"common/rpcutil"
 	"framework/actor"
 	"framework/log"
+	"framework/proto/pb/ss"
 	"framework/rpc"
 )
 
@@ -56,6 +58,12 @@ func (player *PlayerActor) Receive(ctx actor.Context) {
 // 玩家登入
 func (player *PlayerActor) login(ctx actor.Context, req *LoginReq) {
 	log.Info("player login, playerId=%v", player.playerId)
+	reqLogin := &ss.ReqPlayerLogin{}
+	reqLogin.PlayerId = new(int64)
+	*reqLogin.PlayerId = player.playerId
+	respLogin := &ss.RespPlayerLogin{}
+	rpcutil.CallPlayer(player.playerId, reqLogin, respLogin)
+
 	ctx.Respond(&LoginResp{})
 }
 
@@ -68,5 +76,12 @@ func (player *PlayerActor) logout(ctx actor.Context, req *LogoutReq) {
 			rpc.TcpClose(rpc.RpcModeOuter, player.connId)
 		}
 	}
+
+	reqLogout := &ss.ReqPlayerLogout{}
+	reqLogout.PlayerId = new(int64)
+	*reqLogout.PlayerId = player.playerId
+	respLogout := &ss.RespPlayerLogout{}
+	rpcutil.CallPlayer(player.playerId, reqLogout, respLogout)
+
 	ctx.Respond(&LogoutResp{})
 }

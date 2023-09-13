@@ -11,9 +11,12 @@ type Context interface {
 	context.Context
 	SetNetConn(conn network.Connection) Context
 	GetNetConn() network.Connection
+	SetGuid(int64) Context
+	GetGuid() int64
 }
 
 type ctxAttrConn struct{}
+type ctxAttrGuid struct{}
 
 func createContext(parent context.Context) Context {
 	ctx := &ContextImpl{
@@ -63,4 +66,16 @@ func (ctx *ContextImpl) GetNetConn() network.Connection {
 		return nil
 	}
 	return conn.(network.Connection)
+}
+
+func (ctx *ContextImpl) SetGuid(guid int64) Context {
+	return ctx.SetAttrib(ctxAttrGuid{}, guid)
+}
+
+func (ctx *ContextImpl) GetGuid() int64 {
+	guid, ok := ctx.GetAttrib(ctxAttrGuid{})
+	if !ok {
+		return 0
+	}
+	return guid.(int64)
 }

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"framework/actor"
 	"framework/log"
-	"player/configmgr"
-
 	"os"
+	"player/configmgr"
+	"player/logic/playermgr"
 	"player/netmgr"
 	"sync"
 	"time"
@@ -61,6 +61,7 @@ func (app *App) Start() {
 
 	root := app.actorSystem.Root()
 	netmgr.NewNetMgr(root).Start()
+	root.SpawnNamed(playermgr.ActorName, playermgr.NewPlayerMgrActor())
 
 	for {
 		app.update()

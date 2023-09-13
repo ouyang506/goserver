@@ -1,0 +1,26 @@
+syntax = "proto2";
+package ss;
+
+//消息ID定义[范围10201-10300]
+enum ss_player{
+  msg_id_req_player_login   = 10201;
+  msg_id_req_player_logout  = 10202;
+}
+
+message req_player_login{
+  optional int64 player_id = 1;
+}
+
+message resp_player_login{
+  optional int32  err_code = 1;
+  optional string err_desc = 2;
+}
+
+message req_player_logout{
+  optional int64 player_id = 1;
+}
+
+message resp_player_logout{
+  optional int32  err_code = 1;
+  optional string err_desc = 2;
+}

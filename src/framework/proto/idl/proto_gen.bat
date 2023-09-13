@@ -15,6 +15,7 @@ set protoc_ss=protoc -I../src/framework/proto/idl/cs -I../src/framework/proto/id
 %protoc_ss%  --go_opt=Mss_common.proto=ss/ 	ss_common.proto
 %protoc_ss%  --go_opt=Mss_mysql_proxy.proto=ss/ 	ss_mysql_proxy.proto
 %protoc_ss%  --go_opt=Mss_redis_proxy.proto=ss/ 	ss_redis_proxy.proto
+%protoc_ss%  --go_opt=Mss_player.proto=ss/ 	ss_player.proto
 
 cd %pwd%
 

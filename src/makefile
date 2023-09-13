@@ -1,4 +1,4 @@
-objects = login gate player mysqlproxy redisproxy
+objects = mockclient login gate player mysqlproxy redisproxy
 
 # make debug=true
 ifeq ($(debug),true)

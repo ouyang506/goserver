@@ -125,7 +125,7 @@ func (stub *RpcStub) loopSend() {
 			msg = &InnerMessage{
 				CallId:  rpc.CallId,
 				MsgID:   rpc.MsgId,
-				Guid:    0,
+				Guid:    rpc.Guid,
 				Content: rpc.ReqMsg,
 			}
 		} else if rpc.RpcMode == RpcModeOuter {

@@ -8,6 +8,7 @@ enum cs_player{
 
 // 查询玩家基础信息
 message req_query_player{
+  optional int64 player_id = 1;
 }
 
 message resp_query_player{

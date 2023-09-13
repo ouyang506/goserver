@@ -20,4 +20,7 @@ var SSRpcMsg [][]any = [][]any{
 	//ss_redis_proxy
 	{int(ss.SsRedisProxy_msg_id_req_redis_cmd), &ss.ReqRedisCmd{}, &ss.RespRedisCmd{}},
 	{int(ss.SsRedisProxy_msg_id_req_redis_eval), &ss.ReqRedisEval{}, &ss.RespRedisEval{}},
+	//ss_player
+	{int(ss.SsPlayer_msg_id_req_player_login), &ss.ReqPlayerLogin{}, &ss.RespPlayerLogin{}},
+	{int(ss.SsPlayer_msg_id_req_player_logout), &ss.ReqPlayerLogout{}, &ss.RespPlayerLogout{}},
 }

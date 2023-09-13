@@ -21,3 +21,8 @@ func CallMysqlProxy(req proto.Message, resp proto.Message, options ...rpc.Option
 func CallRedisProxy(req proto.Message, resp proto.Message, options ...rpc.Option) error {
 	return rpc.Call(common.ServerTypeRedisProxy, 0, req, resp, options...)
 }
+
+// rpc to player server
+func CallPlayer(playerId int64, req proto.Message, resp proto.Message, options ...rpc.Option) error {
+	return rpc.Call(common.ServerTypePlayer, playerId, req, resp, options...)
+}

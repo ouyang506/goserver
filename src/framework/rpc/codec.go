@@ -60,7 +60,7 @@ func (cc *InnerMessageCodec) Decode(c network.Connection, in interface{}) (inter
 	skip += 8
 	innerMsg.MsgID = int(binary.LittleEndian.Uint32(innerMsgBytes[skip:]))
 	skip += 4
-	innerMsg.Guid = int64(binary.LittleEndian.Uint64(innerMsgBytes))
+	innerMsg.Guid = int64(binary.LittleEndian.Uint64(innerMsgBytes[skip:]))
 	skip += 8
 
 	content := innerMsgBytes[skip:]

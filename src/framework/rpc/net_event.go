@@ -88,7 +88,7 @@ func (h *InnerNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) {
 					log.Error("handler rcv msg panic, msgId: %v, stack : %s", msgId, string(buff[:n]))
 				}
 			}()
-			ctx := createContext(h.owner.Context()).SetNetConn(c)
+			ctx := createContext(h.owner.Context()).SetNetConn(c).SetGuid(rcvInnerMsg.Guid)
 			if respMsg == nil {
 				method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(reqMsg)})
 			} else {

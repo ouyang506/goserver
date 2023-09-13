@@ -318,7 +318,7 @@ func (robot *Robot) tickStateQueryPlayer(e *fsm.Event) {
 	// 	return
 	// }
 
-	log.Error("rpc call query player response code: %v, desc: %v",
+	log.Info("rpc call query player response code: %v, desc: %v",
 		resp.GetErrCode(), resp.GetErrDesc())
 	robot.resetStateFrameTime()
 }
