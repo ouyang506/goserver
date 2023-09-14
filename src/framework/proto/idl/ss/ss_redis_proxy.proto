@@ -1,14 +1,14 @@
 syntax = "proto2";
-package ss;
+package ss_redis_proxy;
 
 //消息ID定义[范围10101-10200]
-enum ss_redis_proxy{
+enum MSGID{
   msg_id_req_redis_cmd  = 10101;
   msg_id_req_redis_eval = 10102;
 }
 
 //错误码
-enum ss_redis_proxy_error{
+enum Errors{
   redis_nil_error   = 1;
   execute_failed    = 2;
 }

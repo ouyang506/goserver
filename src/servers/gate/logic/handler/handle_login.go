@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"framework/log"
 	"framework/proto/pb"
-	"framework/proto/pb/cs"
+	"framework/proto/pb/csgate"
 	"framework/rpc"
 	"gate/configmgr"
 	"gate/logic/player"
@@ -15,7 +15,9 @@ import (
 	"time"
 )
 
-func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLoginGate, resp *cs.RespLoginGate) {
+func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context,
+	req *csgate.ReqLoginGate, resp *csgate.RespLoginGate) {
+
 	defer func() {
 		respJson, _ := json.Marshal(resp)
 		reqJson, _ := json.Marshal(req)
@@ -93,7 +95,7 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 	}
 
 	// 添加到player管理器
-	addPlayerReq := &playermgr.AddPlayerReq{
+	addPlayerReq := &playermgr.ReqAddPlayer{
 		PlayerId: playerId,
 		ConnId:   conn.GetSessionId(),
 	}
@@ -107,10 +109,10 @@ func (h *MessageHandler) HandleRpcReqLoginGate(ctx rpc.Context, req *cs.ReqLogin
 		*resp.ErrDesc = "unkown error"
 		return
 	}
-	playerActorId := addPlayerResp.(*playermgr.AddPlayerResp).PlayerActorId
+	playerActorId := addPlayerResp.(*playermgr.RespAddPlayer).PlayerActorId
 
 	// 玩家登入操作
-	playerLoginReq := &player.LoginReq{}
+	playerLoginReq := &player.ReqLogin{}
 	future = h.Root().Request(playerActorId, playerLoginReq)
 	_, err = future.WaitTimeout(time.Second * 3)
 	if err != nil {

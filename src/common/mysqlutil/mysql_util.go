@@ -5,21 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"framework/log"
-	"framework/proto/pb/ss"
+	"framework/proto/pb/ssmysqlproxy"
 	"framework/rpc"
 	"time"
 )
 
 // select
 func Query(sql string, params ...any) (result *QueryResult, err error) {
-	req := &ss.ReqExecuteSql{}
-	req.Type = new(ss.DbOperType)
-	*req.Type = ss.DbOperType_oper_query
+	req := &ssmysqlproxy.ReqExecuteSql{}
+	req.Type = new(ssmysqlproxy.DbOperType)
+	*req.Type = ssmysqlproxy.DbOperType_oper_query
 	req.Sql = &sql
 	jsonBytes, _ := json.Marshal(params)
 	req.Params = new(string)
 	*req.Params = string(jsonBytes)
-	resp := &ss.RespExecuteSql{}
+	resp := &ssmysqlproxy.RespExecuteSql{}
 
 	err = rpcutil.CallMysqlProxy(req, resp, rpc.WithTimeout(time.Second*5))
 	if err != nil {
@@ -62,14 +62,14 @@ func QueryOne(sql string, params ...any) (row *ResultRow, err error) {
 
 // insert , update
 func Execute(sql string, params ...any) (lastInsertId int64, affectCount int64, err error) {
-	req := &ss.ReqExecuteSql{}
-	req.Type = new(ss.DbOperType)
-	*req.Type = ss.DbOperType_oper_execute
+	req := &ssmysqlproxy.ReqExecuteSql{}
+	req.Type = new(ssmysqlproxy.DbOperType)
+	*req.Type = ssmysqlproxy.DbOperType_oper_execute
 	req.Sql = &sql
 	jsonBytes, _ := json.Marshal(params)
 	req.Params = new(string)
 	*req.Params = string(jsonBytes)
-	resp := &ss.RespExecuteSql{}
+	resp := &ssmysqlproxy.RespExecuteSql{}
 
 	err = rpcutil.CallMysqlProxy(req, resp, rpc.WithTimeout(time.Second*5))
 	if err != nil {

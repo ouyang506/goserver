@@ -1,14 +1,14 @@
 syntax = "proto2";
-package cs;
+package cs_gate;
 
-//消息ID定义[范围1001-1100]，见cs_comon::msg_route
-enum cs_gate{
+//消息ID定义[范围1001-1100]
+//见cs_comon::msg_route
+enum MSGID{
   //[1000,1010]定义系统协议
   msg_id_req_heart_beat 	= 1001;
 
   //[1011-1100]定义业务协议
 	msg_id_req_login_gate  = 1011;
-
 }
 
 // 心跳请求协议

@@ -1,8 +1,8 @@
 syntax = "proto2";
-package cs;
+package cs_common;
 
 // 协议路由
-enum msg_route{
+enum cs_msg_route{
   cs_gate_msg_id_begin    = 1001;
   cs_gate_msg_id_end      = 1100;
   cs_player_msg_id_begin  = 1101;

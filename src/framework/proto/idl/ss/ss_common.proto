@@ -1,2 +1,2 @@
 syntax = "proto2";
-package ss;
+package ss_common;

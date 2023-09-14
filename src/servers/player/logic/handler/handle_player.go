@@ -4,15 +4,15 @@ import (
 	"encoding/json"
 	"framework/log"
 	"framework/proto/pb"
-	"framework/proto/pb/cs"
-	"framework/proto/pb/ss"
+	"framework/proto/pb/csplayer"
+	"framework/proto/pb/ssplayer"
 	"framework/rpc"
 	"player/logic/playermgr"
 	"time"
 )
 
 func (h *MessageHandler) HandleRpcReqPlayerLogin(ctx rpc.Context,
-	req *ss.ReqPlayerLogin, resp *ss.RespPlayerLogin) {
+	req *ssplayer.ReqPlayerLogin, resp *ssplayer.RespPlayerLogin) {
 
 	defer func() {
 		respJson, _ := json.Marshal(resp)
@@ -33,7 +33,7 @@ func (h *MessageHandler) HandleRpcReqPlayerLogin(ctx rpc.Context,
 }
 
 func (h *MessageHandler) HandleRpcReqPlayerLogout(ctx rpc.Context,
-	req *ss.ReqPlayerLogout, resp *ss.RespPlayerLogout) {
+	req *ssplayer.ReqPlayerLogout, resp *ssplayer.RespPlayerLogout) {
 
 	defer func() {
 		respJson, _ := json.Marshal(resp)
@@ -54,7 +54,7 @@ func (h *MessageHandler) HandleRpcReqPlayerLogout(ctx rpc.Context,
 }
 
 func (h *MessageHandler) HandleRpcReqQueryPlayer(ctx rpc.Context,
-	req *cs.ReqQueryPlayer, resp *cs.RespQueryPlayer) {
+	req *csplayer.ReqQueryPlayer, resp *csplayer.RespQueryPlayer) {
 
 	defer func() {
 		respJson, _ := json.Marshal(resp)

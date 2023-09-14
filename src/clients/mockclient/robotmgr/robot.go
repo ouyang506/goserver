@@ -4,7 +4,8 @@ import (
 	"common/rpcutil"
 	"fmt"
 	"framework/log"
-	"framework/proto/pb/cs"
+	"framework/proto/pb/csgate"
+	"framework/proto/pb/csplayer"
 	"mockclient/configmgr"
 	"mockclient/netmgr"
 	"time"
@@ -273,8 +274,8 @@ func (robot *Robot) tickStateLoginGate(e *fsm.Event) {
 	netmgr.Instance().RemoveGateStubs()
 	netmgr.Instance().AddGateStub(robot.gateIp, robot.gatePort)
 
-	req := &cs.ReqLoginGate{}
-	resp := &cs.RespLoginGate{}
+	req := &csgate.ReqLoginGate{}
+	resp := &csgate.RespLoginGate{}
 	req.PlayerId = new(int64)
 	*req.PlayerId = robot.playerId
 	req.Token = new(string)
@@ -302,8 +303,8 @@ func (robot *Robot) tickStateQueryPlayer(e *fsm.Event) {
 		return
 	}
 
-	req := &cs.ReqQueryPlayer{}
-	resp := &cs.RespQueryPlayer{}
+	req := &csplayer.ReqQueryPlayer{}
+	resp := &csplayer.RespQueryPlayer{}
 	err := rpcutil.ClientCall(req, resp)
 	if err != nil {
 		log.Error("rpc call query player failed: %v", err)

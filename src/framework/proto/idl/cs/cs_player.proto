@@ -1,8 +1,9 @@
 syntax = "proto2";
-package cs;
+package cs_player;
 
-//消息ID定义[范围1101-1200],见cs_comon::msg_route
-enum cs_player{
+//消息ID定义[范围1101-1200]
+//见cs_comon::msg_route
+enum MSGID{
   msg_id_req_query_player 	= 1101;
 }
 

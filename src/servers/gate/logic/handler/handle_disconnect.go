@@ -11,7 +11,7 @@ import (
 // 客户端网络断开
 func (h *MessageHandler) OnNetConnClosed(conn network.Connection) {
 	// 查询Player
-	findReq := &playermgr.FindPlayerByConnReq{
+	findReq := &playermgr.ReqFindPlayerByConn{
 		ConnId: conn.GetSessionId(),
 	}
 	future := h.Root().Request(playermgr.ActorId, findReq)
@@ -19,8 +19,8 @@ func (h *MessageHandler) OnNetConnClosed(conn network.Connection) {
 	if err != nil {
 		log.Error("client disconnected, find player error, connId=%v, err=%v", conn.GetSessionId(), err)
 	}
-	playerId := findResp.(*playermgr.FindPlayerByConnResp).PlayerId
-	playerActorId := findResp.(*playermgr.FindPlayerByConnResp).PlayerActorId
+	playerId := findResp.(*playermgr.RespFindPlayerByConn).PlayerId
+	playerActorId := findResp.(*playermgr.RespFindPlayerByConn).PlayerActorId
 
 	// player登出
 	if playerActorId != nil {

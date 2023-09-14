@@ -1,13 +1,13 @@
 syntax = "proto2";
-package ss;
+package ss_mysql_proxy;
 
 //消息ID定义[范围10001-10100]
-enum ss_mysql_proxy{
+enum MSGID{
   msg_id_req_execute_sql  = 10001;
 }
 
 //错误码
-enum ss_mysql_proxy_error{
+enum Errors{
   invalid_oper_type   = 1; // 非法的操作类型
   invalid_sql_param   = 2; // sql查询参数错误
   execute_sql_failed  = 3; // 执行sql返回错误

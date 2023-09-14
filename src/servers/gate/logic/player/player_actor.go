@@ -4,7 +4,7 @@ import (
 	"common/rpcutil"
 	"framework/actor"
 	"framework/log"
-	"framework/proto/pb/ss"
+	"framework/proto/pb/ssplayer"
 	"framework/rpc"
 )
 
@@ -16,10 +16,10 @@ type PlayerActor struct {
 }
 
 // 玩家登入
-type LoginReq struct {
+type ReqLogin struct {
 }
 
-type LoginResp struct {
+type RespLogin struct {
 }
 
 // 玩家登出原因
@@ -48,7 +48,7 @@ func (player *PlayerActor) Receive(ctx actor.Context) {
 		log.Info("player actor start, playerId=%v, actorId=%v", player.playerId, ctx.Self())
 	case *actor.Stop:
 		log.Info("player actor stopped, playerId=%v, actorId=%v", player.playerId, ctx.Self())
-	case *LoginReq:
+	case *ReqLogin:
 		player.login(ctx, req)
 	case *LogoutReq:
 		player.logout(ctx, req)
@@ -56,15 +56,15 @@ func (player *PlayerActor) Receive(ctx actor.Context) {
 }
 
 // 玩家登入
-func (player *PlayerActor) login(ctx actor.Context, req *LoginReq) {
+func (player *PlayerActor) login(ctx actor.Context, req *ReqLogin) {
 	log.Info("player login, playerId=%v", player.playerId)
-	reqLogin := &ss.ReqPlayerLogin{}
+	reqLogin := &ssplayer.ReqPlayerLogin{}
 	reqLogin.PlayerId = new(int64)
 	*reqLogin.PlayerId = player.playerId
-	respLogin := &ss.RespPlayerLogin{}
+	respLogin := &ssplayer.RespPlayerLogin{}
 	rpcutil.CallPlayer(player.playerId, reqLogin, respLogin)
 
-	ctx.Respond(&LoginResp{})
+	ctx.Respond(&RespLogin{})
 }
 
 // 玩家登出
@@ -77,10 +77,10 @@ func (player *PlayerActor) logout(ctx actor.Context, req *LogoutReq) {
 		}
 	}
 
-	reqLogout := &ss.ReqPlayerLogout{}
+	reqLogout := &ssplayer.ReqPlayerLogout{}
 	reqLogout.PlayerId = new(int64)
 	*reqLogout.PlayerId = player.playerId
-	respLogout := &ss.RespPlayerLogout{}
+	respLogout := &ssplayer.RespPlayerLogout{}
 	rpcutil.CallPlayer(player.playerId, reqLogout, respLogout)
 
 	ctx.Respond(&LogoutResp{})

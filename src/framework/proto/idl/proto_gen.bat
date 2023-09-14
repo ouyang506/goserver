@@ -6,16 +6,16 @@ cd ../../../../tools
 protoc -I../src/framework/proto/idl/ --go_out=../src/framework/proto --go_opt=Merror_code.proto=pb/ 	error_code.proto
 
 set protoc_cs=protoc -I../src/framework/proto/idl/cs --go_out=../src/framework/proto/pb
-%protoc_cs%  --go_opt=Mcs_common.proto=cs/ 	cs_common.proto
-%protoc_cs%  --go_opt=Mcs_gate.proto=cs/ 	cs_gate.proto
-%protoc_cs%  --go_opt=Mcs_player.proto=cs/ 	cs_player.proto
+%protoc_cs%  --go_opt=Mcs_common.proto=cscommon/ 	cs_common.proto
+%protoc_cs%  --go_opt=Mcs_gate.proto=csgate/ 	cs_gate.proto
+%protoc_cs%  --go_opt=Mcs_player.proto=csplayer/ 	cs_player.proto
 
 
 set protoc_ss=protoc -I../src/framework/proto/idl/cs -I../src/framework/proto/idl/ss --go_out=../src/framework/proto/pb
-%protoc_ss%  --go_opt=Mss_common.proto=ss/ 	ss_common.proto
-%protoc_ss%  --go_opt=Mss_mysql_proxy.proto=ss/ 	ss_mysql_proxy.proto
-%protoc_ss%  --go_opt=Mss_redis_proxy.proto=ss/ 	ss_redis_proxy.proto
-%protoc_ss%  --go_opt=Mss_player.proto=ss/ 	ss_player.proto
+%protoc_ss%  --go_opt=Mss_common.proto=sscommon/ 	ss_common.proto
+%protoc_ss%  --go_opt=Mss_mysql_proxy.proto=ssmysqlproxy/ 	ss_mysql_proxy.proto
+%protoc_ss%  --go_opt=Mss_redis_proxy.proto=ssredisproxy/ 	ss_redis_proxy.proto
+%protoc_ss%  --go_opt=Mss_player.proto=ssplayer/ 	ss_player.proto
 
 cd %pwd%
 

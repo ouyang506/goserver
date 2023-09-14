@@ -1,8 +1,8 @@
 syntax = "proto2";
-package ss;
+package ss_player;
 
 //消息ID定义[范围10201-10300]
-enum ss_player{
+enum MSGID{
   msg_id_req_player_login   = 10201;
   msg_id_req_player_logout  = 10202;
 }

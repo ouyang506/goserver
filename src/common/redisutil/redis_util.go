@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"framework/log"
-	"framework/proto/pb/ss"
+	"framework/proto/pb/ssredisproxy"
 	"framework/rpc"
 	"strconv"
 	"time"
@@ -20,10 +20,10 @@ var (
 )
 
 func doCallRedis(cmdArgs []string, cmdResult any) error {
-	req := &ss.ReqRedisCmd{}
+	req := &ssredisproxy.ReqRedisCmd{}
 	req.Args = cmdArgs
 
-	resp := &ss.RespRedisCmd{}
+	resp := &ssredisproxy.RespRedisCmd{}
 	err := rpcutil.CallRedisProxy(req, resp, rpc.WithTimeout(time.Second*5))
 	if err != nil {
 		log.Error("rpc call redis proxy failed, %v", err)
@@ -31,7 +31,7 @@ func doCallRedis(cmdArgs []string, cmdResult any) error {
 	}
 
 	if resp.GetErrCode() != 0 {
-		if resp.GetErrCode() == int32(ss.SsRedisProxyError_redis_nil_error) {
+		if resp.GetErrCode() == int32(ssredisproxy.Errors_redis_nil_error) {
 			return ErrRedisNil
 		}
 		log.Error("do redis cmd failed, %v", resp.GetErrDesc())

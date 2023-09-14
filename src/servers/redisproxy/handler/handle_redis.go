@@ -3,12 +3,13 @@ package handler
 import (
 	"encoding/json"
 	"framework/log"
-	"framework/proto/pb/ss"
+	"framework/proto/pb/ssredisproxy"
 	"framework/rpc"
 	"redisproxy/redismgr"
 )
 
-func (h *MessageHandler) HandleRpcReqRedisCmd(ctx rpc.Context, req *ss.ReqRedisCmd, resp *ss.RespRedisCmd) {
+func (h *MessageHandler) HandleRpcReqRedisCmd(ctx rpc.Context,
+	req *ssredisproxy.ReqRedisCmd, resp *ssredisproxy.RespRedisCmd) {
 	reqJson, _ := json.Marshal(req)
 	log.Debug("rcv ReqRedisCmd : %s", string(reqJson))
 	defer func() {
@@ -24,14 +25,14 @@ func (h *MessageHandler) HandleRpcReqRedisCmd(ctx rpc.Context, req *ss.ReqRedisC
 	if err != nil {
 		if redismgr.Instance().IsNilError(err) {
 			resp.ErrCode = new(int32)
-			*resp.ErrCode = int32(ss.SsRedisProxyError_redis_nil_error)
+			*resp.ErrCode = int32(ssredisproxy.Errors_redis_nil_error)
 			resp.ErrDesc = new(string)
 			*resp.ErrDesc = err.Error()
 			return
 		}
 		log.Error("redis do cmd error: %v", err)
 		resp.ErrCode = new(int32)
-		*resp.ErrCode = int32(ss.SsRedisProxyError_execute_failed)
+		*resp.ErrCode = int32(ssredisproxy.Errors_execute_failed)
 		resp.ErrDesc = new(string)
 		*resp.ErrDesc = err.Error()
 		return
@@ -42,5 +43,6 @@ func (h *MessageHandler) HandleRpcReqRedisCmd(ctx rpc.Context, req *ss.ReqRedisC
 }
 
 // TODO implement
-func (h *MessageHandler) HandleRpcReqRedisEval(ctx rpc.Context, req *ss.ReqRedisEval, resp *ss.RespRedisEval) {
+func (h *MessageHandler) HandleRpcReqRedisEval(ctx rpc.Context,
+	req *ssredisproxy.ReqRedisEval, resp *ssredisproxy.RespRedisEval) {
 }

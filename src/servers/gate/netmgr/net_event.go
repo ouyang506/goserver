@@ -5,7 +5,7 @@ import (
 	"framework/log"
 	"framework/network"
 	"framework/proto/pb"
-	"framework/proto/pb/cs"
+	"framework/proto/pb/cscommon"
 	"framework/rpc"
 	"gate/logic/handler"
 	"gate/logic/player"
@@ -43,8 +43,8 @@ func (e *ClientNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) 
 	callId := outerMsg.CallId
 
 	// handled by gate server
-	if msg == 0 || (msgId > int(cs.MsgRoute_cs_gate_msg_id_begin) &&
-		msgId <= int(cs.MsgRoute_cs_gate_msg_id_end)) {
+	if msg == 0 || (msgId > int(cscommon.CsMsgRoute_cs_gate_msg_id_begin) &&
+		msgId <= int(cscommon.CsMsgRoute_cs_gate_msg_id_end)) {
 		e.OuterNetEventHandler.OnRcvMsg(c, msg)
 		return
 	}
@@ -65,8 +65,8 @@ func (e *ClientNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) 
 
 	targetServer := 0
 	switch {
-	case msgId >= int(cs.MsgRoute_cs_player_msg_id_begin) &&
-		msgId <= int(cs.MsgRoute_cs_player_msg_id_end):
+	case msgId >= int(cscommon.CsMsgRoute_cs_player_msg_id_begin) &&
+		msgId <= int(cscommon.CsMsgRoute_cs_player_msg_id_end):
 		{
 			targetServer = common.ServerTypePlayer
 		}
