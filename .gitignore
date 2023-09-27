@@ -1,7 +1,7 @@
 logs/
 bin/
 
-software/data
+deploy/windows/data
 
 .vscode
 /src/goserver.code-workspace

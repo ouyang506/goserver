@@ -77,17 +77,30 @@ func (e *ClientNetEventHandler) OnRcvMsg(c network.Connection, msg interface{}) 
 		return
 	}
 
+	//TODO : 这里proto message进行了多次不必要的反序列化和序列化，codec需要重新规划
 	go func() {
-		_, respMsg := pb.GetProtoMsgById(msgId)
-		err := rpc.Call(targetServer, playerId, outerMsg.Content, respMsg)
-		if err != nil {
-			log.Error("route target server error: %v", err)
+		reqMsg, respMsg := pb.GetProtoMsgById(msgId)
+		if reqMsg == nil {
+			log.Error("cannot find the rpc message, msgId=%v", msgId)
 			return
 		}
-		respOuterMsg := &rpc.OuterMessage{}
-		respOuterMsg.CallId = callId
-		respOuterMsg.MsgID = 0
-		respOuterMsg.Content = respMsg
-		rpc.TcpSend(rpc.RpcModeOuter, c.GetSessionId(), respOuterMsg)
+		if respMsg == nil {
+			err := rpc.Notify(targetServer, playerId, outerMsg.Content)
+			if err != nil {
+				log.Error("route to target server error: %v", err)
+				return
+			}
+		} else {
+			err := rpc.Call(targetServer, playerId, outerMsg.Content, respMsg)
+			if err != nil {
+				log.Error("route to target server error: %v", err)
+				return
+			}
+			respOuterMsg := &rpc.OuterMessage{}
+			respOuterMsg.CallId = callId
+			respOuterMsg.MsgID = 0
+			respOuterMsg.Content = respMsg
+			rpc.TcpSend(rpc.RpcModeOuter, c.GetSessionId(), respOuterMsg)
+		}
 	}()
 }

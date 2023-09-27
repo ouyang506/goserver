@@ -66,7 +66,7 @@ func (player *PlayerActor) load() {
 
 func (player *PlayerActor) refreshLoginTime() {
 	_, _, err := mysqlutil.Execute("update t_player set login_time=? where id=?",
-		player.lastLoginTime.Format("2006-01-02 15:04:05"), player.playerId)
+		player.loginTime.Format("2006-01-02 15:04:05"), player.playerId)
 	if err != nil {
 		log.Error("refresh player login time error: %v", err)
 	}
