@@ -286,7 +286,6 @@ var (
 type Poll struct {
 	pollIndex      int
 	netcore        *NetPollCore
-	logger         log.Logger
 	eventHandler   NetEventHandler
 	pollFd         int
 	wakeFd         int
@@ -779,18 +778,18 @@ func (poll *Poll) loopWrite(fd int) error {
 		n, err := unix.Write(conn.fd, b)
 		if err != nil {
 			if err == unix.EAGAIN {
-				poll.logger.LogDebug("loopWrite write return EAGAIN, fd:%d", fd)
+				log.Debug("loopWrite write return EAGAIN, fd:%d", fd)
 				totalWrite += n
 				break
 			} else {
-				poll.logger.LogError("poll write error : %v", err)
+				log.Error("poll write error : %v", err)
 				conn.sendBuff.Reset()
 				poll.close(conn.fd)
 				return err
 			}
 		} else {
 			if n != len(b) {
-				poll.logger.LogError("poll write return len error, write len:%d, data len:%d", n, len(b))
+				log.Error("poll write return len error, write len:%d, data len:%d", n, len(b))
 				conn.sendBuff.Reset()
 				poll.close(conn.fd)
 				return errors.New("write return length error")
